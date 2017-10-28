@@ -1,0 +1,15 @@
+# Compiled source #
+###################
+*.o
+*.so
+*.f90
+*.F90
+
+# Project configuration files
+#############################
+
+.project
+.pydevproject
+.settings
+
+test

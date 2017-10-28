@@ -1,0 +1,3 @@
+ifort -shared -assume byterecl -convert big_endian -msse3 -fpe0 -fpic -reentrancy threaded -traceback -threads -fp-model source -I. -O3 kdtree2.f90 f_kdtree_search.f90 -shared -o f_kdtree_search.so 
+
+rm *.mod

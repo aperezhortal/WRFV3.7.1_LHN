@@ -1,0 +1,30 @@
+# Latent Heat Nudging related variables
+
+# Upscaling and Downscaling from nested domains not supported in LHN!
+
+#---------------------------------------------------------------------------------------------------------------------------------------
+# State Variables declarations 
+#<Table>  <Type> <Sym>               <Dims>   <Use>   <NumTLev> <Stagger> <IO>          <DNAME>                <DESCRIP>                <UNITS>
+state     real  rainrate_observations ij     misc        1         -     i6d   "RAINRATE_OBSERVATIONS"    "Surface rainrate observations"   "mm/hr"
+state     real  latent_heat_tendency  ikj    misc        1         -     hd    "latent_heat_tendency" "Latent Heat Tendency"             "K/s"
+
+
+#---------------------------------------------------------------------------------------------------------------------------------------
+# Variables that are set at run-time to control configuration  (namelist-settable)                                              
+#                                               
+#<Table>  <Type>     <Sym>                   <How set>                   <Nentries>   <Default>   
+rconfig   integer   lhn_type      namelist,latent_heat_nudging            max_domains    0       rh       "lhn"          "Latent heat nudging type"                   ""
+rconfig   integer   lhn_start     namelist,latent_heat_nudging            max_domains    0       rh       "lhn_start"    "Latent heat nudging start time for domain"  "seconds"
+rconfig   integer   lhn_end       namelist,latent_heat_nudging            max_domains    0       rh       "lhn_end"      "Latent heat nudging end time for domain"    "seconds"
+rconfig   real   maximum_profile_scaling  namelist,latent_heat_nudging    max_domains    3.      rh       "maximum_profile_scaling"      "Maximum latent heat profile scaling factor"    ""
+rconfig   real   minimum_profile_scaling  namelist,latent_heat_nudging    max_domains    0.333   rh       "minimum_profile_scaling"      "Minimum latent heat profile scaling factor"    ""
+rconfig   real   search_range     namelist,latent_heat_nudging            max_domains    100     rh       "search_range" "Profiles search range in km"    ""
+
+#---------------------------------------------------------------------------------------------------------------------------------------
+# Package Declarations
+
+#key      package       associated                package          associated 4d scalars
+#         name          namelist choice           state vars
+
+package   latent_heat_nudging  lhn_type==1  state:latent_heat_tendency,rainrate_observations
+
