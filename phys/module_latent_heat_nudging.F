@@ -95,7 +95,6 @@ CONTAINS
       INTEGER :: i_profile
       INTEGER :: j_profile
 
-
       ! -------------------- End of Local variables Declarations ------------------------------------
 
       minimum_distance = search_range/dx ! minimum distance in grind points length
@@ -107,7 +106,6 @@ CONTAINS
       kte = min(k_end, kde - 1)
 
       max_number_of_grid_points = (search_range/dx)**2
-
 
       IF (apply_latent_heat_nudging) THEN
          model_latent_heating(:, :, :) = 0.
@@ -146,12 +144,12 @@ CONTAINS
 
                CALL spiral_profile_search(i, j, max_number_of_grid_points, &
                                           rainrate_observations, model_rainrate, &
-                                          minimum_profile_scaling,maximum_profile_scaling,&
+                                          minimum_profile_scaling, maximum_profile_scaling, &
                                           ids, ide, jds, jde, &
                                           ims, ime, jms, jme, &
                                           i_profile, j_profile, profile_found)
 
-               IF (profile_found .EQ. PROFILE_CRITERIA_MEET) THEN
+               IF (profile_found == PROFILE_CRITERIA_MEET) THEN
 
                   latent_heat_factor = (rainrate_observations(i, j)/model_rainrate(i, j)) - 1.0
 
@@ -160,9 +158,9 @@ CONTAINS
                                                       cumulus_latent_heating(i, k, j))*latent_heat_factor
                   ENDDO
 
-               ELSE IF (profile_found .EQ. NEARBY_PROFILE_FOUND) THEN
+               ELSE IF (profile_found == NEARBY_PROFILE_FOUND) THEN
 
-                  latent_heat_factor = (rainrate_observations(i, j)/model_rainrate(i_profile, j_profile)) - 1.0
+                  latent_heat_factor = (rainrate_observations(i, j)/model_rainrate(i_profile, j_profile))
 
                   DO k = kts, kte
                      latent_heat_tendency(i, k, j) = ((microphysics_latent_heating(i_profile, k, j_profile) + &
@@ -192,7 +190,7 @@ CONTAINS
                         latent_heat_tendency(i, k, j) = (microphysics_latent_heating(i, k, j) + &
                                                          cumulus_latent_heating(i, k, j))*latent_heat_factor
                      ENDDO
-                     ENDIF
+                  ENDIF
 
                ENDIF
 
@@ -247,16 +245,14 @@ CONTAINS
 ! https://stackoverflow.com/questions/3706219/algorithm-for-iterating-over-an-outward-spiral-on-a-discrete-2d-grid-from-the-or
    SUBROUTINE spiral_profile_search(i_center, j_center, max_number_of_grid_points, &
                                     rainrate_observations, model_rainrate, &
-                                    minimum_profile_scaling,maximum_profile_scaling, &
+                                    minimum_profile_scaling, maximum_profile_scaling, &
                                     ids, ide, jds, jde, &
                                     ims, ime, jms, jme, &
                                     i_profile, j_profile, profile_found)
 
-
       INTEGER, INTENT(IN) :: i_center
       INTEGER, INTENT(IN) :: j_center
       INTEGER, INTENT(IN) :: max_number_of_grid_points
-
 
       REAL, DIMENSION(ims:ime, jms:jme), INTENT(IN) :: model_rainrate
       REAL, DIMENSION(ims:ime, jms:jme), INTENT(IN):: rainrate_observations !(K/s)
@@ -294,63 +290,63 @@ CONTAINS
       profile_found = NO_PROFILE_FOUND
 
       ! Check if the target grid point meet the criteria
-      if ( (model_rainrate(i_center, j_center) > 0.001) .AND. & ! Avoid divisions close to zero
-           (rainrate_observations(i_center, j_center) < model_rainrate(i_center, j_center)*maximum_profile_scaling) .AND. &
-           (rainrate_observations(i_center, j_center) > model_rainrate(i_center, j_center)*minimum_profile_scaling) ) THEN
+      if ((model_rainrate(i_center, j_center) > 0.001) .AND. & ! Avoid divisions close to zero
+          (rainrate_observations(i_center, j_center) < model_rainrate(i_center, j_center)*maximum_profile_scaling) .AND. &
+          (rainrate_observations(i_center, j_center) > model_rainrate(i_center, j_center)*minimum_profile_scaling)) THEN
 
          profile_found = PROFILE_CRITERIA_MEET
-
-      ELSE ! Otherwise:  search for nearby profiles
-
-         segment_points_visited = 0
-         segment_length = 1
-
-         DO steps = 0, max_number_of_grid_points
-
-            ! make a step, add 'direction' vector (di, dj) to current position (i, j)
-            i_profile = i_profile + di
-            j_profile = j_profile + dj
-
-            ! Ignore points outside domain
-            if ( (i_profile < ids) .OR. &
-                 (i_profile > ide) .OR. &
-                 (j_profile < jds) .OR. &
-                 (j_profile > jde) ) THEN
-
-               CYCLE
-            ENDIF
-
-            segment_points_visited = segment_points_visited + 1
-
-            if ( (model_rainrate(i_profile, j_profile) > 0.001) .AND. & ! Avoid divisions close to zero
-                 (rainrate_observations(i_center, j_center) < model_rainrate(i_profile, j_profile)*maximum_profile_scaling) .AND. &
-                 (rainrate_observations(i_center, j_center) > model_rainrate(i_profile, j_profile)*minimum_profile_scaling) ) THEN
-
-               profile_found = NEARBY_PROFILE_FOUND
-
-               EXIT
-
-            ENDIF
-
-            IF (segment_points_visited == segment_length) THEN
-               ! Done with current segment
-               segment_points_visited = 0
-
-               ! 'rotate' directions
-               buffer = di
-               di = -dj
-               dj = buffer
-
-               ! Increase segment length if necessary
-               IF (dj == 0) THEN
-                  segment_length = segment_length + 1
-               ENDIF
-
-            ENDIF
-
-         ENDDO
-
+         RETURN
       ENDIF
+
+      ! Otherwise:  search for nearby profiles
+
+      segment_points_visited = 0
+      segment_length = 1
+
+      DO steps = 0, max_number_of_grid_points
+
+         ! make a step, add 'direction' vector (di, dj) to current position (i, j)
+         i_profile = i_profile + di
+         j_profile = j_profile + dj
+
+         ! Ignore points outside domain
+         if ((i_profile < ids) .OR. &
+             (i_profile > ide) .OR. &
+             (j_profile < jds) .OR. &
+             (j_profile > jde)) THEN
+
+            CYCLE
+         ENDIF
+
+         segment_points_visited = segment_points_visited + 1
+
+         if ((model_rainrate(i_profile, j_profile) > 0.001) .AND. & ! Avoid divisions close to zero
+             (rainrate_observations(i_center, j_center) < model_rainrate(i_profile, j_profile)*maximum_profile_scaling) .AND. &
+             (rainrate_observations(i_center, j_center) > model_rainrate(i_profile, j_profile)*minimum_profile_scaling)) THEN
+
+            profile_found = NEARBY_PROFILE_FOUND
+
+            RETURN
+
+         ENDIF
+
+         IF (segment_points_visited == segment_length) THEN
+            ! Done with current segment
+            segment_points_visited = 0
+
+            ! 'rotate' directions
+            buffer = di
+            di = -dj
+            dj = buffer
+
+            ! Increase segment length if necessary
+            IF (dj == 0) THEN
+               segment_length = segment_length + 1
+            ENDIF
+
+         ENDIF
+
+      ENDDO
 
    END SUBROUTINE spiral_profile_search
 
