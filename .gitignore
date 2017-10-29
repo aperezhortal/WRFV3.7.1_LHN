@@ -8,6 +8,7 @@
 # Project configuration files
 #############################
 
+.cproject
 .project
 .pydevproject
 .settings

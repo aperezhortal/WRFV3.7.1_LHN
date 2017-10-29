@@ -1,9 +1,11 @@
 !WRF:MEDIATION_LAYER:PHYSICS
 !
 
-MODULE module_latent_heat_nudging
+#define PROFILE_CRITERIA_MEET 0
+#define NEARBY_PROFILE_FOUND 1
+#define NO_PROFILE_FOUND 2
 
-   USE kdtree2_module, ONLY:kdtree2_create, kdtree2_n_nearest, kdtree2_result, kdtree2_destroy, kdtree2
+MODULE module_latent_heat_nudging
 
    IMPLICIT NONE
 
@@ -86,17 +88,13 @@ CONTAINS
       INTEGER :: jj
       INTEGER :: tile
       REAL :: latent_heat_factor
-      LOGICAL, DIMENSION(ims:ime, jms:jme) :: criteria_meet
       LOGICAL :: apply_latent_heat_nudging
-      LOGICAL :: profile_seach_flag
-      INTEGER :: number_of_accepted_profiles
-      INTEGER :: number_of_accepted_profiles_in_tile
+      INTEGER :: max_number_of_grid_points
+      INTEGER :: profile_found
       REAL :: minimum_distance
+      INTEGER :: i_profile
+      INTEGER :: j_profile
 
-      REAL, ALLOCATABLE :: accepted_profiles_position(:, :)
-      REAL :: grid_point_position(2)
-      type(kdtree2), pointer :: my_kdtree
-      TYPE(kdtree2_result) :: nearest_profile(1)
 
       ! -------------------- End of Local variables Declarations ------------------------------------
 
@@ -108,173 +106,93 @@ CONTAINS
 
       kte = min(k_end, kde - 1)
 
-      model_rainrate(:,:)=0.
-      model_latent_heating(:,:,:)=0.
-      !latent_heat_tendency(:,:,:)=0.
-      number_of_accepted_profiles = 0
+      max_number_of_grid_points = (search_range/dx)**2
 
 
       IF (apply_latent_heat_nudging) THEN
-
-         write(*,*) "Applying latent heat nudging. t=",current_time_in_seconds , "seconds"
+         model_latent_heating(:, :, :) = 0.
+         write (*, *) "Applying latent heat nudging. t=", current_time_in_seconds, "seconds"
 
          ! First compute the model rainrate and check which model grid points meet the desired criteria (accepted profiles)
 
 !$OMP PARALLEL DO SCHEDULE(DYNAMIC) default(shared) &
-!$OMP PRIVATE ( tile ,its,ite,jts,jte, i,j,number_of_accepted_profiles_in_tile) &
-!$OMP REDUCTION(+:number_of_accepted_profiles)
+!$OMP PRIVATE ( tile ,its,ite,jts,jte, i,j)
          DO tile = 1, num_tiles
             its = i_start(tile)
             ite = i_end(tile)
             jts = j_start(tile)
             jte = j_end(tile)
-            number_of_accepted_profiles_in_tile = 0
 
             DO i = its, ite
             DO j = jts, jte
-
                model_rainrate(i, j) = (RAINCV(i, j) + RAINSHV(i, j) + RAINNCV(i, j))*3600./dt ! in mm/hr
-
-               if ( model_rainrate(i, j) > 0.01 )  then ! Avoid divisions close to zero
-
-                 criteria_meet(i, j) = (rainrate_observations(i, j) < model_rainrate(i, j)*maximum_profile_scaling) .AND. &
-                                       (rainrate_observations(i, j) > model_rainrate(i, j)*minimum_profile_scaling)
-
-               else
-                  criteria_meet(i, j) = .False.
-               endif
-
-
-               IF (criteria_meet(i, j)) THEN
-                  number_of_accepted_profiles_in_tile = number_of_accepted_profiles_in_tile + 1
-               ENDIF
-
             ENDDO
             ENDDO
-            number_of_accepted_profiles = number_of_accepted_profiles + number_of_accepted_profiles_in_tile
-
          ENDDO
 !$OMP END PARALLEL DO
 
-
-         ! If there are only a few profiles that meet the criteria do not perform the profile search
-         IF (number_of_accepted_profiles < 4) THEN
-            profile_seach_flag = .FALSE.
-         ELSE
-            profile_seach_flag = .TRUE.
-           ! Second: Create the kdtree with the accepted profiles
-             ALLOCATE (accepted_profiles_position(2, number_of_accepted_profiles))
-             current_profile_num = 1
-
-             DO i = ids, ide
-             DO j = jds, jde
-
-                IF (criteria_meet(i, j)) THEN
-                   accepted_profiles_position(1, current_profile_num) = real(i)
-                   accepted_profiles_position(2, current_profile_num) = real(j)
-                   current_profile_num = current_profile_num + 1
-                ENDIF
-
-             ENDDO
-             ENDDO
-
-             my_kdtree => kdtree2_create(accepted_profiles_position, 2, sort=.TRUE., rearrange=.TRUE.)
-
-         ENDIF
-
-
 !$OMP PARALLEL DO SCHEDULE(DYNAMIC) default(shared) &
-!$OMP PRIVATE ( tile ,its,ite,jts,jte, i,j,k,ii,jj,latent_heat_factor,nearest_profile,grid_point_position)
+!$OMP PRIVATE ( tile ,its,ite,jts,jte, i,j,i_profile, j_profile,profile_found)
          DO tile = 1, num_tiles
             its = i_start(tile)
             ite = i_end(tile)
             jts = j_start(tile)
             jte = j_end(tile)
-            ! Third: Compute the latent heat tendencies
 
             DO i = its, ite
             DO j = jts, jte
 
-               IF (criteria_meet(i, j)) THEN
-                  ! If criteria is meet, apply the correction factor
+               profile_found = NO_PROFILE_FOUND
 
-                  !write(*,*) "rainrate_observations(i, j)",rainrate_observations(i, j)
-                  !write(*,*) "model_rainrate(i, j)",model_rainrate(i, j)
+               CALL spiral_profile_search(i, j, max_number_of_grid_points, &
+                                          rainrate_observations, model_rainrate, &
+                                          minimum_profile_scaling,maximum_profile_scaling,&
+                                          ids, ide, jds, jde, &
+                                          ims, ime, jms, jme, &
+                                          i_profile, j_profile, profile_found)
 
+               IF (profile_found .EQ. PROFILE_CRITERIA_MEET) THEN
 
                   latent_heat_factor = (rainrate_observations(i, j)/model_rainrate(i, j)) - 1.0
 
-
                   DO k = kts, kte
-
                      latent_heat_tendency(i, k, j) = (microphysics_latent_heating(i, k, j) + &
                                                       cumulus_latent_heating(i, k, j))*latent_heat_factor
                   ENDDO
 
+               ELSE IF (profile_found .EQ. NEARBY_PROFILE_FOUND) THEN
+
+                  latent_heat_factor = (rainrate_observations(i, j)/model_rainrate(i_profile, j_profile)) - 1.0
+
+                  DO k = kts, kte
+                     latent_heat_tendency(i, k, j) = ((microphysics_latent_heating(i_profile, k, j_profile) + &
+                                                       cumulus_latent_heating(i_profile, k, j_profile))*latent_heat_factor - &
+                                                      (microphysics_latent_heating(i, k, j) + &
+                                                       cumulus_latent_heating(i, k, j)))
+
+                  ENDDO
+
                ELSE
-                  ! If Criteria is not meet, perform a search in nearby points for a profile that meet the criteria
 
-                  IF (profile_seach_flag) THEN
-                  !IF (.FALSE.) THEN
-
-                     grid_point_position(1) = i
-                     grid_point_position(2) = j
-
-                     ! If criteria is not meet, search profiles nearby that meet the .criteria
-!$OMP CRITICAL
-                    ! This should be executed by one single thread at a time, otherwise, an error occurs who knows why...
-                    CALL kdtree2_n_nearest(tp=my_kdtree, qv=grid_point_position, nn=1, results=nearest_profile)
-!$OMP END CRITICAL
-                     !write(*,*) "i",i,"j",j
-                     !write(*,*) "nearest_profile(1)%idx",nearest_profile(1)%idx
-                     !write(*,*) "nearest_profile(1)%dis",nearest_profile(1)%dis
-
-
-                     ! Found profile position indexes = (ii,jj)
-                     ii = nint(accepted_profiles_position(1, nearest_profile(1)%idx))
-                     jj = nint(accepted_profiles_position(2, nearest_profile(1)%idx))
-
-                     IF (sqrt(nearest_profile(1)%dis) < minimum_distance) THEN
-
-                        latent_heat_factor = (rainrate_observations(i, j)/model_rainrate(ii, jj))
-
-                        DO k = kts, kte
-                           latent_heat_tendency(i, k, j) = ((microphysics_latent_heating(ii, k, jj) + &
-                                                             cumulus_latent_heating(ii, k, jj))*latent_heat_factor - &
-                                                            (microphysics_latent_heating(i, k, j) + &
-                                                             cumulus_latent_heating(i, k, j)))
-
-                        ENDDO
-
-                     ELSE
-                        ! The profile is far away, search unsuccessful
-                        IF (rainrate_observations(i, j) > model_rainrate(i, j)) THEN
-                           latent_heat_factor = maximum_profile_scaling - 1.
-                        ELSE
-                           latent_heat_factor = minimum_profile_scaling - 1.
-                        ENDIF
-
-                        IF (abs(rainrate_observations(i, j)-model_rainrate(i, j)) > 0.01) THEN
-                            latent_heat_factor = 0
-                        ELSE
-                            write(*,*)
-                            write(*,*) "rainrate_observations(i, j)", rainrate_observations(i, j)
-                            write(*,*) "model_rainrate(i, j)", model_rainrate(i, j)
-
-                        ENDIF
-
-                        DO k = kts, kte
-                           latent_heat_tendency(i, k, j) = (microphysics_latent_heating(i, k, j) + &
-                                                            cumulus_latent_heating(i, k, j))*latent_heat_factor
-
-                        ENDDO
-
-                     ENDIF
-                  ELSE
+                  IF (abs(rainrate_observations(i, j) - model_rainrate(i, j)) < 0.001) THEN
                      DO k = kts, kte
                         latent_heat_tendency(i, k, j) = 0.
+
                      ENDDO
-                  ENDIF
+                  ELSE
+
+                     ! No profile that match the criteria found, search unsuccessful
+                     IF (rainrate_observations(i, j) > model_rainrate(i, j)) THEN
+                        latent_heat_factor = maximum_profile_scaling - 1.
+                     ELSE
+                        latent_heat_factor = minimum_profile_scaling - 1.
+                     ENDIF
+
+                     DO k = kts, kte
+                        latent_heat_tendency(i, k, j) = (microphysics_latent_heating(i, k, j) + &
+                                                         cumulus_latent_heating(i, k, j))*latent_heat_factor
+                     ENDDO
+                     ENDIF
 
                ENDIF
 
@@ -284,29 +202,23 @@ CONTAINS
          ENDDO
 !$OMP END PARALLEL DO
 
-        IF (profile_seach_flag) THEN
-         DEALLOCATE (accepted_profiles_position)
-         CALL kdtree2_destroy(my_kdtree)
-        ENDIF
-
-   write(*,*)
-   write(*,*) "minimum_profile_scaling",minimum_profile_scaling
-   write(*,*) "maximum_profile_scaling",maximum_profile_scaling
-   write(*,*)
-   write(*,*) "Min latent_heat_tendency:",MINVAL(latent_heat_tendency)
-   write(*,*) "Min cumulus_latent_heating CU:",MINVAL(cumulus_latent_heating)
-   write(*,*) "Min microphysics_latent_heating CU:",MINVAL(microphysics_latent_heating)
-   write(*,*)
-   write(*,*) "Max latent_heat_tendency:",MAXVAL(latent_heat_tendency)
-   write(*,*) "Max cumulus_latent_heating CU:",MAXVAL(cumulus_latent_heating)
-   write(*,*) "Max microphysics_latent_heating CU:",MAXVAL(microphysics_latent_heating)
-   write(*,*)
-   write(*,*) "Min model_rainrate:",MINVAL(model_rainrate)
-   write(*,*) "Min rainrate_observations:",MINVAL(rainrate_observations)
-   write(*,*)
-   write(*,*) "Max model_rainrate:",MAXVAL(model_rainrate)
-   write(*,*) "Max rainrate_observations:",MAXVAL(rainrate_observations)
-
+         write (*, *)
+         write (*, *) "minimum_profile_scaling", minimum_profile_scaling
+         write (*, *) "maximum_profile_scaling", maximum_profile_scaling
+         write (*, *)
+         write (*, *) "Min latent_heat_tendency:", MINVAL(latent_heat_tendency)
+         write (*, *) "Min cumulus_latent_heating CU:", MINVAL(cumulus_latent_heating)
+         write (*, *) "Min microphysics_latent_heating CU:", MINVAL(microphysics_latent_heating)
+         write (*, *)
+         write (*, *) "Max latent_heat_tendency:", MAXVAL(latent_heat_tendency)
+         write (*, *) "Max cumulus_latent_heating CU:", MAXVAL(cumulus_latent_heating)
+         write (*, *) "Max microphysics_latent_heating CU:", MAXVAL(microphysics_latent_heating)
+         write (*, *)
+         write (*, *) "Min model_rainrate:", MINVAL(model_rainrate)
+         write (*, *) "Min rainrate_observations:", MINVAL(rainrate_observations)
+         write (*, *)
+         write (*, *) "Max model_rainrate:", MAXVAL(model_rainrate)
+         write (*, *) "Max rainrate_observations:", MAXVAL(rainrate_observations)
 
       ELSE ! Do not apply latent heat nudging
 
@@ -330,8 +242,116 @@ CONTAINS
 
       ENDIF
 
-
-
    END SUBROUTINE latent_heat_nudging_1
+
+! https://stackoverflow.com/questions/3706219/algorithm-for-iterating-over-an-outward-spiral-on-a-discrete-2d-grid-from-the-or
+   SUBROUTINE spiral_profile_search(i_center, j_center, max_number_of_grid_points, &
+                                    rainrate_observations, model_rainrate, &
+                                    minimum_profile_scaling,maximum_profile_scaling, &
+                                    ids, ide, jds, jde, &
+                                    ims, ime, jms, jme, &
+                                    i_profile, j_profile, profile_found)
+
+
+      INTEGER, INTENT(IN) :: i_center
+      INTEGER, INTENT(IN) :: j_center
+      INTEGER, INTENT(IN) :: max_number_of_grid_points
+
+
+      REAL, DIMENSION(ims:ime, jms:jme), INTENT(IN) :: model_rainrate
+      REAL, DIMENSION(ims:ime, jms:jme), INTENT(IN):: rainrate_observations !(K/s)
+      REAL, INTENT(IN) :: minimum_profile_scaling
+      REAL, INTENT(IN) :: maximum_profile_scaling
+      INTEGER, INTENT(IN) :: ids
+      INTEGER, INTENT(IN) :: ide
+      INTEGER, INTENT(IN) :: jds
+      INTEGER, INTENT(IN) :: jde
+      INTEGER, INTENT(IN) :: ims
+      INTEGER, INTENT(IN) :: ime
+      INTEGER, INTENT(IN) :: jms
+      INTEGER, INTENT(IN) :: jme
+
+      INTEGER, INTENT(OUT) :: i_profile
+      INTEGER, INTENT(OUT) :: j_profile
+      INTEGER, INTENT(OUT) :: profile_found
+
+      ! Local Declarations
+      INTEGER :: di
+      INTEGER :: dj
+      INTEGER :: buffer
+      INTEGER :: number_of_steps
+      INTEGER :: steps
+      INTEGER :: segment_points_visited
+      INTEGER :: segment_length
+
+      di = 1
+      dj = 0
+      number_of_steps = 1
+
+      i_profile = i_center
+      j_profile = j_center
+
+      profile_found = NO_PROFILE_FOUND
+
+      ! Check if the target grid point meet the criteria
+      if ( (model_rainrate(i_center, j_center) > 0.001) .AND. & ! Avoid divisions close to zero
+           (rainrate_observations(i_center, j_center) < model_rainrate(i_center, j_center)*maximum_profile_scaling) .AND. &
+           (rainrate_observations(i_center, j_center) > model_rainrate(i_center, j_center)*minimum_profile_scaling) ) THEN
+
+         profile_found = PROFILE_CRITERIA_MEET
+
+      ELSE ! Otherwise:  search for nearby profiles
+
+         segment_points_visited = 0
+         segment_length = 1
+
+         DO steps = 0, max_number_of_grid_points
+
+            ! make a step, add 'direction' vector (di, dj) to current position (i, j)
+            i_profile = i_profile + di
+            j_profile = j_profile + dj
+
+            ! Ignore points outside domain
+            if ( (i_profile < ids) .OR. &
+                 (i_profile > ide) .OR. &
+                 (j_profile < jds) .OR. &
+                 (j_profile > jde) ) THEN
+
+               CYCLE
+            ENDIF
+
+            segment_points_visited = segment_points_visited + 1
+
+            if ( (model_rainrate(i_profile, j_profile) > 0.001) .AND. & ! Avoid divisions close to zero
+                 (rainrate_observations(i_center, j_center) < model_rainrate(i_profile, j_profile)*maximum_profile_scaling) .AND. &
+                 (rainrate_observations(i_center, j_center) > model_rainrate(i_profile, j_profile)*minimum_profile_scaling) ) THEN
+
+               profile_found = NEARBY_PROFILE_FOUND
+
+               EXIT
+
+            ENDIF
+
+            IF (segment_points_visited == segment_length) THEN
+               ! Done with current segment
+               segment_points_visited = 0
+
+               ! 'rotate' directions
+               buffer = di
+               di = -dj
+               dj = buffer
+
+               ! Increase segment length if necessary
+               IF (dj == 0) THEN
+                  segment_length = segment_length + 1
+               ENDIF
+
+            ENDIF
+
+         ENDDO
+
+      ENDIF
+
+   END SUBROUTINE spiral_profile_search
 
 END MODULE module_latent_heat_nudging
