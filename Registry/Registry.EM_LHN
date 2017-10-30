@@ -16,7 +16,7 @@ state     real  latent_heat_tendency  ikj    misc        1         -     hd    "
 rconfig   integer   lhn_type      namelist,latent_heat_nudging            max_domains    0       rh       "lhn"          "Latent heat nudging type"                   ""
 rconfig   integer   lhn_start     namelist,latent_heat_nudging            max_domains    0       rh       "lhn_start"    "Latent heat nudging start time for domain"  "seconds"
 rconfig   integer   lhn_end       namelist,latent_heat_nudging            max_domains    0       rh       "lhn_end"      "Latent heat nudging end time for domain"    "seconds"
-rconfig   real   maximum_profile_scaling  namelist,latent_heat_nudging    max_domains    3.      rh       "maximum_profile_scaling"      "Maximum latent heat profile scaling factor"    ""
+rconfig   real   maximum_profile_scaling  namelist,latent_heat_nudging    max_domains    2.      rh       "maximum_profile_scaling"      "Maximum latent heat profile scaling factor"    ""
 rconfig   real   minimum_profile_scaling  namelist,latent_heat_nudging    max_domains    0.333   rh       "minimum_profile_scaling"      "Minimum latent heat profile scaling factor"    ""
 rconfig   real   search_range     namelist,latent_heat_nudging            max_domains    100     rh       "search_range" "Profiles search range in km"    ""
 
