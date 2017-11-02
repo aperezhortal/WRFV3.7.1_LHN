@@ -112,6 +112,9 @@ tools/registry
 tr49t67
 
 test
+run/namelist.input.backup
+configure.wrf.backup
+
 tr49t85
 tr67t85
 
