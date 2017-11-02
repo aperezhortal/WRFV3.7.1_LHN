@@ -56,7 +56,7 @@ CONTAINS
 #endif
     USE module_utility
 
-    USE module_latent_heat_nudging, ONLY : latent_heat_nudging_1
+    USE module_latent_heat_nudging, ONLY : latent_heat_nudging_1, update_accumulation
     IMPLICIT NONE
 
     TYPE ( domain ), INTENT(INOUT) :: grid
@@ -120,6 +120,9 @@ CONTAINS
     REAL, DIMENSION( ims:ime, jms:jme ) :: exch_temf  ! 1/7/09 WA
 
     REAL, DIMENSION( ims:ime, jms:jme ) :: ht_loc, mixht
+
+    ! LHN
+    REAL, DIMENSION( ims:ime, jms:jme ) :: model_timestep_precip_accum
 
     INTEGER                             :: ij
     INTEGER  num_roof_layers
@@ -1406,20 +1409,33 @@ BENCH_START(fdda_driver_tim)
 
 BENCH_END(fdda_driver_tim)
 
+
+
  if (config_flags%lhn_type == 1) then
      CALL wrf_debug ( 200 , ' call latent_heat_nudging_1' )
 
-     !pi_phy
+     CALL update_accumulation(RAINCV=grid%raincv, RAINSHV=grid%rainshv , RAINNCV=grid%rainncv, &
+                              model_previous_timestep_precip_accum=grid%previous_timesteps_precip_accum, &
+                              model_precip_accum=grid%precip_accum, &
+                              accum_time_levels=config_flags%accum_time_levels, &
+                              ids=ids, ide=ide, jds=jds, jde=jde,&
+                              ims=ims, ime=ime, jms=jms, jme=jme,&
+                              num_tiles=grid%num_tiles, &
+                              i_start=grid%i_start, &
+                              i_end=min(grid%i_end, ide-1), &
+                              j_start=grid%j_start, &
+                              j_end=min(grid%j_end, jde-1) )
+
+
+
 
      CALL latent_heat_nudging_1(current_time_in_seconds=int(grid%xtime*60.), &
                               dt=grid%dt, &
                               dx=grid%dx, &
                               microphysics_latent_heating=grid%h_diabatic, &
                               cumulus_latent_heating=grid%rthcuten, &
-                              raincv=grid%raincv, &
-                              rainshv=grid%rainshv, &
-                              rainncv=grid%rainncv, &
-                              rainrate_observations=grid%rainrate_observations, &
+                              model_precip_accum=grid%precip_accum, &
+                              precip_accum_obs=grid%precip_accum_obs, &
                               lhn_start=config_flags%lhn_start, &
                               lhn_end=config_flags%lhn_end, &
                               latent_heat_tendency=grid%latent_heat_tendency, &

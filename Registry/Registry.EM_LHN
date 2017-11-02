@@ -2,23 +2,25 @@
 
 # Upscaling and Downscaling from nested domains not supported in LHN!
 
+
+
+#---------------------------------------------------------------------------------------------------------------------------------------
+# Dimension specifications
+#<Table>  <Dim>            <Order>  <How defined>                  <Coord-axis>  <Dimname in Datasets>
+dimspec  n_accum_steps       1      namelist=accum_time_levels          z          accum_time_steps 
+
+
+
 #---------------------------------------------------------------------------------------------------------------------------------------
 # State Variables declarations 
-#<Table>  <Type> <Sym>               <Dims>   <Use>   <NumTLev> <Stagger> <IO>          <DNAME>                <DESCRIP>                <UNITS>
-state     real  rainrate_observations ij     misc        1         -     i6d   "RAINRATE_OBSERVATIONS"    "Surface rainrate observations"   "mm/hr"
-state     real  latent_heat_tendency  ikj    misc        1         -     hd    "latent_heat_tendency" "Latent Heat Tendency"             "K/s"
+#<Table>  <Type> <Sym>                    <Dims>   <Use>   <NumTLev> <Stagger> <IO>          <DNAME>                <DESCRIP>                <UNITS>
+state     real  precip_accum_obs    ij     misc       1         -       i6   "PRECIP_ACCUM_OBS"    "Precipitation accumulation observationsobservations"   "mm/hr"
+state     real  precip_accum        ij     misc       1         -       i0h  "PRECIP_ACCUM"        "Interval Rain Accumulation"     "mm"
 
+state     real  latent_heat_tendency  ikj    misc        1         -     h    "latent_heat_tendency" "Latent Heat Tendency"             "K/s"
 
-#---------------------------------------------------------------------------------------------------------------------------------------
-# Variables that are set at run-time to control configuration  (namelist-settable)                                              
-#                                               
-#<Table>  <Type>     <Sym>                   <How set>                   <Nentries>   <Default>   
-rconfig   integer   lhn_type      namelist,latent_heat_nudging            max_domains    0       rh       "lhn"          "Latent heat nudging type"                   ""
-rconfig   integer   lhn_start     namelist,latent_heat_nudging            max_domains    0       rh       "lhn_start"    "Latent heat nudging start time for domain"  "seconds"
-rconfig   integer   lhn_end       namelist,latent_heat_nudging            max_domains    0       rh       "lhn_end"      "Latent heat nudging end time for domain"    "seconds"
-rconfig   real   maximum_profile_scaling  namelist,latent_heat_nudging    max_domains    2.      rh       "maximum_profile_scaling"      "Maximum latent heat profile scaling factor"    ""
-rconfig   real   minimum_profile_scaling  namelist,latent_heat_nudging    max_domains    0.333   rh       "minimum_profile_scaling"      "Minimum latent heat profile scaling factor"    ""
-rconfig   real   search_range     namelist,latent_heat_nudging            max_domains    100     rh       "search_range" "Profiles search range in km"    ""
+#<Table>  <Type> <Sym>                               <Dims>            <Use>   <NumTLev>  <Stagger> <IO>          <DNAME>                       <DESCRIP>                <UNITS>
+state     real  previous_timesteps_precip_accum    {n_accum_steps}ij   misc        1         -       ir    "PREVIOUS_TIMESTEPS_PRECIP_ACCUM" "Previous time steps rain accumulations"     "mm"
 
 #---------------------------------------------------------------------------------------------------------------------------------------
 # Package Declarations
@@ -26,5 +28,18 @@ rconfig   real   search_range     namelist,latent_heat_nudging            max_do
 #key      package       associated                package          associated 4d scalars
 #         name          namelist choice           state vars
 
-package   latent_heat_nudging  lhn_type==1  state:latent_heat_tendency,rainrate_observations
+package   latent_heat_nudging  lhn_type==1         -            state:precip_accum_obs,precip_accum,latent_heat_tendency,previous_timesteps_precip_accum
+
+#---------------------------------------------------------------------------------------------------------------------------------------
+# Variables that are set at run-time to control configuration  (namelist-settable)                                              
+#                                               
+#<Table>  <Type>     <Sym>                   <How set>                   <Nentries>   <Default>   
+rconfig   integer   lhn_type      namelist,latent_heat_nudging            max_domains    0       rh "lhn"          "Latent heat nudging type"                   ""
+rconfig   integer   lhn_start     namelist,latent_heat_nudging            1              0       rh "lhn_start"    "Latent heat nudging start time for domain"  "seconds"
+rconfig   integer   lhn_end       namelist,latent_heat_nudging            1              0       rh "lhn_end"      "Latent heat nudging end time for domain"    "seconds"
+rconfig   real   maximum_profile_scaling  namelist,latent_heat_nudging    1              2.      rh "maximum_profile_scaling"      "Maximum latent heat profile scaling factor"    ""
+rconfig   real   minimum_profile_scaling  namelist,latent_heat_nudging    1              0.333   rh "minimum_profile_scaling"      "Minimum latent heat profile scaling factor"    ""
+rconfig   real   search_range     namelist,latent_heat_nudging            1              100     rh "search_range" "Profiles search range in km"    ""
+rconfig   integer   accum_time_levels   namelist,latent_heat_nudging      1               1      rh "accum_time_levels" "Accumulation interval expressed in time steps"    ""
+
 
