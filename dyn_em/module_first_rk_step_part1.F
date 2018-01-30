@@ -56,7 +56,7 @@ CONTAINS
 #endif
     USE module_utility
 
-    USE module_latent_heat_nudging, ONLY : latent_heat_nudging_1
+    USE module_latent_heat_nudging, ONLY : latent_heat_nudging_JM97
     IMPLICIT NONE
 
     TYPE ( domain ), INTENT(INOUT) :: grid
@@ -1407,33 +1407,34 @@ BENCH_START(fdda_driver_tim)
 BENCH_END(fdda_driver_tim)
 
  if (config_flags%lhn_type == 1) then
-     CALL wrf_debug ( 200 , ' call latent_heat_nudging_1' )
+     CALL wrf_debug ( 200 , ' call latent_heat_nudging_JM97' )
 
      !pi_phy
 
-     CALL latent_heat_nudging_1(current_time_in_seconds=int(grid%xtime*60.), &
-                              dt=grid%dt, &
-                              dx=grid%dx, &
-                              microphysics_latent_heating=grid%h_diabatic, &
-                              cumulus_latent_heating=grid%rthcuten, &
-                              raincv=grid%raincv, &
-                              rainshv=grid%rainshv, &
-                              rainncv=grid%rainncv, &
-                              rainrate_observations=grid%rainrate_observations, &
-                              lhn_start=config_flags%lhn_start, &
-                              lhn_end=config_flags%lhn_end, &
-                              latent_heat_tendency=grid%latent_heat_tendency, &
-                              minimum_profile_scaling=config_flags%minimum_profile_scaling, &
-                              maximum_profile_scaling=config_flags%maximum_profile_scaling, &
-                              search_range=config_flags%search_range, &
-                              ids=ids, ide=ide, jds=jds, jde=jde, kds=kds, kde=kde, &
-                              ims=ims, ime=ime, jms=jms, jme=jme, kms=kms, kme=kme, &
-                              num_tiles=grid%num_tiles, &
-                              i_start=grid%i_start, &
-                              i_end=min(grid%i_end, ide-1), &
-                              j_start=grid%j_start, &
-                              j_end=min(grid%j_end, jde-1), &
-                              k_start=k_start, k_end=k_end )
+     CALL latent_heat_nudging_JM97(current_time_in_seconds=int(grid%xtime*60.), &
+                                  dt=grid%dt, &
+                                  dx=grid%dx, &
+                                  microphysics_latent_heating=grid%h_diabatic, &
+                                  cumulus_latent_heating=grid%rthcuten, &
+                                  raincv=grid%raincv, &
+                                  rainshv=grid%rainshv, &
+                                  rainncv=grid%rainncv, &
+                                  rainrate_observations=grid%rainrate_observations, &
+                                  lhn_start=config_flags%lhn_start, &
+                                  lhn_end=config_flags%lhn_end, &
+                                  latent_heat_tendency=grid%latent_heat_tendency, &
+                                  minimum_profile_scaling=config_flags%minimum_profile_scaling, &
+                                  maximum_profile_scaling=config_flags%maximum_profile_scaling, &
+                                  lhn_smooth_filter_sigma=config_flags%lhn_smooth_filter_sigma,&
+                                  search_range=config_flags%search_range, &
+                                  ids=ids, ide=ide, jds=jds, jde=jde, kds=kds, kde=kde, &
+                                  ims=ims, ime=ime, jms=jms, jme=jme, kms=kms, kme=kme, &
+                                  num_tiles=grid%num_tiles, &
+                                  i_start=grid%i_start, &
+                                  i_end=min(grid%i_end, ide-1), &
+                                  j_start=grid%j_start, &
+                                  j_end=min(grid%j_end, jde-1), &
+                                  k_start=k_start, k_end=k_end )
 
   endif
 
