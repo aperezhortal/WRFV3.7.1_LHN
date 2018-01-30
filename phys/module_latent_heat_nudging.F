@@ -93,13 +93,12 @@ CONTAINS
       LOGICAL :: apply_latent_heat_nudging
       INTEGER :: max_number_of_grid_points
       INTEGER :: profile_found
-      REAL :: minimum_distance
       INTEGER :: i_profile
       INTEGER :: j_profile
 
       ! -------------------- End of Local variables Declarations ------------------------------------
 
-      minimum_distance = search_range/dx ! minimum distance in grind points length
+
 
       apply_latent_heat_nudging = (lhn_start <= current_time_in_seconds) .AND. (current_time_in_seconds <= lhn_end)
 
@@ -138,16 +137,6 @@ CONTAINS
          ENDDO
 !$OMP END PARALLEL DO
 
-         write (*, *) "---------------------------------------------------------------"
-         write (*, *) "Min RAINCV:", MINVAL(RAINCV(ids:ide, jds:jde))
-         write (*, *) "Min RAINSHV:", MINVAL(RAINSHV(ids:ide, jds:jde))
-         write (*, *) "Min RAINNCV:", MINVAL(RAINNCV(ids:ide, jds:jde))
-
-         write (*, *) "Min rainrate_observations:", MINVAL(rainrate_observations(ids:ide, jds:jde))
-         write (*, *)
-         write (*, *) "Max model_rainrate:", MAXVAL(model_rainrate(ids:ide, jds:jde))
-         write (*, *) "Max rainrate_observations:", MAXVAL(rainrate_observations(ids:ide, jds:jde))
-         write (*, *) "---------------------------------------------------------------"
 
          ! Check which model grid points meet the desired criteria
 !$OMP PARALLEL DO SCHEDULE(DYNAMIC) default(shared) &
@@ -161,12 +150,15 @@ CONTAINS
             DO i = its, ite
             DO j = jts, jte
 
+
+               !---------------------------------------------------------------------------------------------
                ! Check if the target grid point meet the criteria
                IF ((model_rainrate(i, j) > 0.001) .AND. & ! Avoid divisions close to zero
                    (rainrate_observations(i, j) < model_rainrate(i, j)*maximum_profile_scaling) .AND. &
                    (rainrate_observations(i, j) > model_rainrate(i, j)*minimum_profile_scaling)) THEN
 
                   profile_found = PROFILE_CRITERIA_MEET
+!                  write(*,*) "Found!"
 
                ELSE IF (max_number_of_grid_points > .0) THEN
                   ! IF criteria is not met, perform an spiral search in the nearby profiles
@@ -183,7 +175,11 @@ CONTAINS
                   profile_found = NO_PROFILE_FOUND
 
                ENDIF
+               !---------------------------------------------------------------------------------------------
 
+
+
+               !---------------------------------------------------------------------------------------------
                ! Scale the profile according to the criteria that the profiles matches
                IF (profile_found == PROFILE_CRITERIA_MEET) THEN
 
@@ -195,7 +191,7 @@ CONTAINS
                   ENDDO
 
                ELSE IF (profile_found == NEARBY_PROFILE_FOUND) THEN
-
+                  !write(*,*) 'NEARBY_PROFILE_FOUND','i=',i,'j=',j,'i_profile',i_profile,'j_profile',j_profile
                   latent_heat_factor = (rainrate_observations(i, j)/model_rainrate(i_profile, j_profile))
 
                   DO k = kts, kte
@@ -206,7 +202,7 @@ CONTAINS
 
                   ENDDO
 
-               ELSE !profile_found = NO_PROFILE_FOUND
+               ELSE !profile_found == NO_PROFILE_FOUND
 
                   IF (abs(rainrate_observations(i, j) - model_rainrate(i, j)) < 0.001) THEN
                      DO k = kts, kte
@@ -228,6 +224,7 @@ CONTAINS
                   ENDIF
 
                ENDIF
+               !---------------------------------------------------------------------------------------------
 
             ENDDO
             ENDDO
@@ -266,6 +263,10 @@ CONTAINS
       ENDIF
 
    END SUBROUTINE latent_heat_nudging_JM97
+
+
+
+
 
 ! https://stackoverflow.com/questions/3706219/algorithm-for-iterating-over-an-outward-spiral-on-a-discrete-2d-grid-from-the-or
    SUBROUTINE spiral_profile_search(i_center, j_center, max_number_of_grid_points, &
@@ -366,6 +367,9 @@ CONTAINS
 
    END SUBROUTINE spiral_profile_search
 
+
+
+
    SUBROUTINE recursive_filter_2d(input_3d, &
                                   sigma_in_gridpoints, &
                                   ids, ide, jds, jde, kds, kde, &
@@ -402,7 +406,7 @@ CONTAINS
       REAL :: a_coef
       REAL :: b_coef
       ! -------------------- End of Local variables Declarations ------------------------------------
-
+      write(*,*) "Smoothing"
       E = 1.0/(sigma_in_gridpoints*sigma_in_gridpoints)
       a_coef = 1.0+E - sqrt(E*(E + 2.0))
       b_coef = 1.0-a_coef
@@ -441,7 +445,7 @@ CONTAINS
          ENDDO
 
       ENDDO
-!$OMP      END PARALLEL DO
+!$OMP END PARALLEL DO
 
       input_3d = backward_filter
 
