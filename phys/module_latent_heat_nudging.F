@@ -98,8 +98,6 @@ CONTAINS
 
       ! -------------------- End of Local variables Declarations ------------------------------------
 
-
-
       apply_latent_heat_nudging = (lhn_start <= current_time_in_seconds) .AND. (current_time_in_seconds <= lhn_end)
 
       kts = k_start
@@ -137,7 +135,6 @@ CONTAINS
          ENDDO
 !$OMP END PARALLEL DO
 
-
          ! Check which model grid points meet the desired criteria
 !$OMP PARALLEL DO SCHEDULE(DYNAMIC) default(shared) &
 !$OMP PRIVATE ( tile ,its,ite,jts,jte, i,j,i_profile, j_profile,profile_found)
@@ -149,7 +146,6 @@ CONTAINS
 
             DO i = its, ite
             DO j = jts, jte
-
 
                !---------------------------------------------------------------------------------------------
                ! Check if the target grid point meet the criteria
@@ -176,8 +172,6 @@ CONTAINS
 
                ENDIF
                !---------------------------------------------------------------------------------------------
-
-
 
                !---------------------------------------------------------------------------------------------
                ! Scale the profile according to the criteria that the profiles matches
@@ -263,10 +257,6 @@ CONTAINS
       ENDIF
 
    END SUBROUTINE latent_heat_nudging_JM97
-
-
-
-
 
 ! https://stackoverflow.com/questions/3706219/algorithm-for-iterating-over-an-outward-spiral-on-a-discrete-2d-grid-from-the-or
    SUBROUTINE spiral_profile_search(i_center, j_center, max_number_of_grid_points, &
@@ -367,9 +357,6 @@ CONTAINS
 
    END SUBROUTINE spiral_profile_search
 
-
-
-
    SUBROUTINE recursive_filter_2d(input_3d, &
                                   sigma_in_gridpoints, &
                                   ids, ide, jds, jde, kds, kde, &
@@ -402,44 +389,99 @@ CONTAINS
 
       REAL, DIMENSION(ims:ime, kms:kme, jms:jme) :: forward_filter
       REAL, DIMENSION(ims:ime, kms:kme, jms:jme) :: backward_filter
-      REAL :: E
-      REAL :: a_coef
-      REAL :: b_coef
+      REAL, DIMENSION(1:3) :: alpha
+      REAL :: beta
+      REAL :: ai
       ! -------------------- End of Local variables Declarations ------------------------------------
-      write(*,*) "Smoothing"
-      E = 1.0/(sigma_in_gridpoints*sigma_in_gridpoints)
-      a_coef = 1.0+E - sqrt(E*(E + 2.0))
-      b_coef = 1.0-a_coef
+
+      ai = 3.738128+5.788982*sigma_in_gridpoints + 3.382473*sigma_in_gridpoints**2 + sigma_in_gridpoints**3
+
+      alpha(1) = (5.788982*sigma_in_gridpoints + 6.764946*(sigma_in_gridpoints**2) + 3*(sigma_in_gridpoints**3))/ai
+      alpha(2) = -(3.382473*(sigma_in_gridpoints**2) + 3*(sigma_in_gridpoints**3))/ai
+      alpha(3) = (sigma_in_gridpoints**3)/ai
+
+      beta = 3.738128/ai
 
 !$OMP PARALLEL DO SCHEDULE(DYNAMIC) default(shared) &
 !$OMP PRIVATE ( k )
       DO k = kds, kde
+
+         ! Apply gaussian filter in the "x" direction for each j
          DO j = jds, jde
-            ! Apply forward filter "x" direction first
-            forward_filter(ids, k, j) = b_coef*input_3d(ids, k, j)
-            DO i = ids + 1, ide
-               forward_filter(i, k, j) = b_coef*input_3d(i, k, j) + a_coef*forward_filter(i - 1, k, j)
+
+            ! Apply forward filter
+
+            forward_filter(ids, k, j) = beta*input_3d(ids, k, j)
+
+            forward_filter(ids + 1, k, j) = beta*input_3d(ids + 1, k, j) + alpha(1)*forward_filter(ids, k, j)
+
+            forward_filter(ids + 2, k, j) = beta*input_3d(ids + 2, k, j) + &
+                                            alpha(1)*forward_filter(ids + 1, k, j) + &
+                                            alpha(2)*forward_filter(ids, k, j)
+
+            DO i = ids + 3, ide
+
+               forward_filter(i, k, j) = beta*input_3d(i, k, j) + &
+                                         alpha(1)*forward_filter(i - 1, k, j) + &
+                                         alpha(2)*forward_filter(i - 2, k, j) + &
+                                         alpha(3)*forward_filter(i - 3, k, j)
             ENDDO
 
             ! Apply backward filter "x" direction
-            backward_filter(ide, k, j) = b_coef*input_3d(ide, k, j)
-            DO i = ide - 1, ids, -1
-               backward_filter(i, k, j) = b_coef*forward_filter(i, k, j) + a_coef*backward_filter(i + 1, k, j)
+
+            backward_filter(ide, k, j) = beta*forward_filter(ide, k, j)
+
+            backward_filter(ide - 1, k, j) = beta*forward_filter(ide - 1, k, j) + alpha(1)*backward_filter(ide, k, j)
+
+            backward_filter(ide - 2, k, j) = beta*forward_filter(ide - 2, k, j) + &
+                                             alpha(1)*backward_filter(ide - 1, k, j) + &
+                                             alpha(2)*backward_filter(ide, k, j)
+
+            DO i = ide - 3, ids, -1
+               backward_filter(i, k, j) = beta*forward_filter(i, k, j) + &
+                                          alpha(1)*backward_filter(i + 1, k, j) + &
+                                          alpha(2)*backward_filter(i + 2, k, j) + &
+                                          alpha(3)*backward_filter(i + 3, k, j)
             ENDDO
 
          ENDDO
 
+         ! Apply gaussian filter in the "y" direction for each i
          DO i = ids, ide
-            ! Apply forward filter y direction
-            forward_filter(i, k, jds) = b_coef*input_3d(i, k, jds)
-            DO j = jds + 1, jde
-               forward_filter(i, k, j) = b_coef*input_3d(i, k, j) + a_coef*forward_filter(i, k, j - 1)
+
+            ! Apply forward filter
+
+            forward_filter(i, k, jds) = beta*input_3d(i, k, jds)
+
+            forward_filter(i, k, jds + 1) = beta*input_3d(i, k, jds + 1) + alpha(1)*forward_filter(i, k, jds)
+
+            forward_filter(i, k, jds + 1) = beta*input_3d(i, k, jds + 2) + &
+                                            alpha(1)*forward_filter(i, k, jds + 1) + &
+                                            alpha(2)*forward_filter(i, k, jds)
+
+            DO j = jds + 3, jde
+
+               forward_filter(i, k, j) = beta*input_3d(i, k, j) + &
+                                         alpha(1)*forward_filter(i, k, j - 1) + &
+                                         alpha(2)*forward_filter(i, k, j - 2) + &
+                                         alpha(3)*forward_filter(i, k, j - 3)
             ENDDO
 
-            ! Apply backward filter "y" direction
-            backward_filter(i, k, jde) = b_coef*forward_filter(i, k, jde)
-            DO j = jde - 1, jds, -1
-               backward_filter(i, k, j) = b_coef*forward_filter(i, k, j) + a_coef*backward_filter(i, k, j + 1)
+            ! Apply backward filter "x" direction
+
+            backward_filter(i, k, jde) = beta*forward_filter(i, k, jde)
+
+            backward_filter(i, k, jde - 1) = beta*forward_filter(i, k, jde - 1) + alpha(1)*backward_filter(i, k, jde)
+
+            backward_filter(i, k, jde - 2) = beta*forward_filter(i, k, jde - 2) + &
+                                             alpha(1)*backward_filter(i, k, jde - 1) + &
+                                             alpha(2)*backward_filter(i, k, jde)
+
+            DO j = jde - 3, jds, -1
+               backward_filter(i, k, j) = beta*forward_filter(i, k, j) + &
+                                          alpha(1)*backward_filter(i, k, j + 1) + &
+                                          alpha(2)*backward_filter(i, k, j + 2) + &
+                                          alpha(3)*backward_filter(i, k, j + 3)
             ENDDO
 
          ENDDO
@@ -447,7 +489,7 @@ CONTAINS
       ENDDO
 !$OMP END PARALLEL DO
 
-      input_3d = backward_filter
+      input_3d = backward_filter  ! Improve memory usage!!
 
    END SUBROUTINE recursive_filter_2d
 
