@@ -71,12 +71,16 @@
    REAL    , PARAMETER :: DEGRAD       = piconst/180.
    REAL    , PARAMETER :: DPD          = 360./365.
 
-   REAL    , PARAMETER ::  SVP1=0.6112
-   REAL    , PARAMETER ::  SVP2=17.67
-   REAL    , PARAMETER ::  SVP3=29.65
-   REAL    , PARAMETER ::  SVPT0=273.15
+   ! Saturation vapor pressure constants for Bolton, 1980 formula
+   ! ew[kPa] = 0.6112 exp[ 17.67 * T / (T+243.5) ] ; temperature T in Celsius
+   ! ew[kPa] = SVP1 exp[ SVP2 * ( T - SVPT0) / (T - SVP3) ] ; temperature T in Kelvin
+   REAL    , PARAMETER ::  SVP1_Pa=611.2    ! constant for saturation vapor pressure calculation (Pa)
+   REAL    , PARAMETER ::  SVP1=0.6112    ! constant for saturation vapor pressure calculation (kPa)
+   REAL    , PARAMETER ::  SVP2=17.67     ! constant for saturation vapor pressure calculation (K)
+   REAL    , PARAMETER ::  SVP3=29.65     ! constant for saturation vapor pressure calculation(K)
+   REAL    , PARAMETER ::  SVPT0=273.15   ! constant for saturation vapor pressure calculation(K)
    REAL    , PARAMETER ::  EP_1=R_v/R_d-1.
-   REAL    , PARAMETER ::  EP_2=R_d/R_v
+   REAL    , PARAMETER ::  EP_2=R_d/R_v   ! constant for specific humidity calculation
    REAL    , PARAMETER ::  KARMAN=0.4
    REAL    , PARAMETER ::  EOMEG=7.2921E-5
    REAL    , PARAMETER ::  STBOLT=5.67051E-8
