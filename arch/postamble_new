@@ -42,7 +42,6 @@ INCLUDE_MODULES =    $(MODULE_SRCH_FLAG) \
                       -I$(WRF_SRC_ROOT_DIR)/share \
                       -I$(WRF_SRC_ROOT_DIR)/phys \
                       -I$(WRF_SRC_ROOT_DIR)/chem -I$(WRF_SRC_ROOT_DIR)/inc \
-                      -I$(WRF_SRC_ROOT_DIR)/external/kdtree2 \
                       -I$(NETCDFPATH)/include \
                       CONFIGURE_RTTOV_INC
 REGISTRY        =    Registry
@@ -51,7 +50,6 @@ CC_TOOLS_CFLAGS = CONFIGURE_NMM_CORE
 #NOWIN LIB_BUNDLED     = \
 #NOWIN                      $(WRF_SRC_ROOT_DIR)/external/fftpack/fftpack5/libfftpack.a \
 #NOWIN                      $(WRF_SRC_ROOT_DIR)/external/io_grib1/libio_grib1.a \
-#NOWIN                      $(WRF_SRC_ROOT_DIR)/external/kdtree2/kdtree2.a \
 #NOWIN                      $(WRF_SRC_ROOT_DIR)/external/io_grib_share/libio_grib_share.a \
 #NOWIN                      $(WRF_SRC_ROOT_DIR)/external/io_int/libwrfio_int.a \
 #NOWIN                      $(ESMF_IO_LIB) \
@@ -70,7 +68,7 @@ NETCDFPATH      =    CONFIGURE_NETCDF_PATH
 PNETCDFPATH     =    CONFIGURE_PNETCDF_PATH
 
 bundled:  io_only CONFIGURE_ATMOCN
-external: io_only CONFIGURE_COMMS_EXTERNAL $(ESMF_TARGET) kdtree2
+external: io_only CONFIGURE_COMMS_EXTERNAL $(ESMF_TARGET)
 io_only:  esmf_time CONFIGURE_WRFIO_NF CONFIGURE_WRFIO_PNF CONFIGURE_WRFIO_GRIB2 \
 	  wrf_ioapi_includes wrfio_grib_share wrfio_grib1 wrfio_int fftpack
 
@@ -134,10 +132,6 @@ esmf_time :
 
 fftpack :
 	( cd $(WRF_SRC_ROOT_DIR)/external/fftpack/fftpack5 ; \
-          make $(J) FC="$(SFC)" FFLAGS="$(PROMOTION) $(FCDEBUG) $(FCBASEOPTS)" RANLIB="$(RANLIB)" AR="$(AR)" \
-          ARFLAGS="$(ARFLAGS)" CPP="$(CPP)" CPPFLAGS="$(CPPFLAGS)" RM="$(RM)" )
-kdtree2 :
-	( cd $(WRF_SRC_ROOT_DIR)/external/kdtree2 ; \
           make $(J) FC="$(SFC)" FFLAGS="$(PROMOTION) $(FCDEBUG) $(FCBASEOPTS)" RANLIB="$(RANLIB)" AR="$(AR)" \
           ARFLAGS="$(ARFLAGS)" CPP="$(CPP)" CPPFLAGS="$(CPPFLAGS)" RM="$(RM)" )
 

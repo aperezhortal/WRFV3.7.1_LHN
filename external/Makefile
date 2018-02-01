@@ -16,6 +16,5 @@ superclean :
 	( cd RSL_LITE ; make superclean )
 	( cd fftpack/fftpack5 ; make superclean )
 	( cd atm_ocn ; make superclean )
-	( cd kdtree2 ; make superclean )
 
 

@@ -16,8 +16,7 @@ CFLAGS		=
 ESMF_LIB_FLAGS  =       
 ESMF_IO_LIB     =       ESMFIOLIB
 ESMF_IO_LIB_EXT =       ESMFIOEXTLIB
-INCLUDE_MODULES =       -I$(WRF_SRC_ROOT_DIR)/external/kdtree2 -I$(WRF_SRC_ROOT_DIR)/external/io_netcdf \
-					    -I$(WRF_SRC_ROOT_DIR)/external/io_int -I$(WRF_SRC_ROOT_DIR)/external/esmf_time_f90 \
+INCLUDE_MODULES =       -I$(WRF_SRC_ROOT_DIR)/external/io_netcdf -I$(WRF_SRC_ROOT_DIR)/external/io_int -I$(WRF_SRC_ROOT_DIR)/external/esmf_time_f90 \
                         -I$(WRF_SRC_ROOT_DIR)/frame -I$(WRF_SRC_ROOT_DIR)/share -I$(WRF_SRC_ROOT_DIR)/phys -I$(WRF_SRC_ROOT_DIR)/chem -I$(WRF_SRC_ROOT_DIR)/inc
 ARCHFLAGS       =       $(COREDEFS) -DIWORDSIZE=4 -DDWORDSIZE=8 -DRWORDSIZE=$(RWORDSIZE) -DLWORDSIZE=4 CONFIGURE_NETCDF_FLAG -DGRIB1 CONFIGURE_GRIB2_FLAG -DLIMIT_ARGS $(DA_ARCHFLAGS)
 LDFLAGS		=       CONFIGURE_LDFLAGS
@@ -30,7 +29,6 @@ REGISTRY        =       Registry
 LIB             =	$(WRF_SRC_ROOT_DIR)/frame/module_internal_header_util.o $(WRF_SRC_ROOT_DIR)/frame/pack_utils.o -L$(WRF_SRC_ROOT_DIR)/external/esmf_time_f90 -lesmf_time \
                         -L$(WRF_SRC_ROOT_DIR)/external/fftpack/fftpack5 -lfftpack \
                         -L$(WRF_SRC_ROOT_DIR)/external/io_grib1 -lio_grib1 \
-                        -L$(WRF_SRC_ROOT_DIR)/external/kdtree2 -kdtree2 \
                         CONFIGURE_GRIB2_LIB \
                         -L$(WRF_SRC_ROOT_DIR)/external/io_grib_share -lio_grib_share
 AR              =       ar ru
@@ -44,7 +42,7 @@ CC_TOOLS        =       $(CC)
 #### because the SGI Fortran compiler complains about long source lines.      ####
 SED_FTN = sed -f $(WRF_SRC_ROOT_DIR)/arch/no_file_line.sed
 
-externals : wrf_ioapi_includes CONFIGURE_WRFIO_NF wrfio_grib_share wrfio_grib1 CONFIGURE_WRFIO_GRIB2 wrfio_int module_dm.F esmf_time fftpack kdtree2
+externals : wrf_ioapi_includes CONFIGURE_WRFIO_NF wrfio_grib_share wrfio_grib1 CONFIGURE_WRFIO_GRIB2 wrfio_int module_dm.F esmf_time fftpack
 
 module_dm.F :
 	( /bin/cp module_dm_warning module_dm.F ; cat module_dm_stubs.F >> module_dm.F )
@@ -76,11 +74,6 @@ esmf_time :
 fftpack :
 	( cd $(WRF_SRC_ROOT_DIR)/external/fftpack/fftpack5 ; \
           make FC="$(SFC)" FFLAGS="$(PROMOTION) $(FCDEBUG) $(FCBASEOPTS)" RANLIB="$(RANLIB)" )
-          
-kdtree2 :
-	( cd $(WRF_SRC_ROOT_DIR)/external/kdtree2 ; \
-          make FC="$(SFC)" FFLAGS="$(PROMOTION) $(FCDEBUG) $(FCBASEOPTS)" RANLIB="$(RANLIB)" )
-	
 
 # compile these without high optimization to speed compile
 solve_interface.o : solve_interface.F
