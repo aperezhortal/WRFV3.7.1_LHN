@@ -7,6 +7,8 @@
 
 MODULE module_latent_heat_nudging
 
+   USE module_model_constants, ONLY:SVP1_Pa, SVP2, SVP3, SVPT0, EP_2
+
    IMPLICIT NONE
 
 CONTAINS
@@ -16,8 +18,12 @@ CONTAINS
    SUBROUTINE latent_heat_nudging_JM97(current_time_in_seconds, dt, dx, &
                                        microphysics_latent_heating, &
                                        cumulus_latent_heating, &
-                                       raincv, rainshv, rainncv, rainrate_observations, &
-                                       lhn_start, lhn_end, latent_heat_tendency, &
+                                       raincv, rainshv, rainncv, &
+                                       temperature, &
+                                       qvapor, pressure, &
+                                       rainrate_observations, &
+                                       lhn_start, lhn_end, &
+                                       latent_heat_tendency, qvapor_adjustment_tend, &
                                        minimum_profile_scaling, maximum_profile_scaling, &
                                        search_range, &
                                        lhn_smooth_filter_sigma, &
@@ -44,6 +50,12 @@ CONTAINS
       REAL, DIMENSION(ims:ime, jms:jme), INTENT(IN) :: raincv !time-step cumulus precipitation in mm
       REAL, DIMENSION(ims:ime, jms:jme), INTENT(IN) :: rainshv !time-step shallow cumulus precipitation in mm
       REAL, DIMENSION(ims:ime, jms:jme), INTENT(IN) :: rainncv !time-step non convective precipitation in mm
+
+      REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(IN) :: qvapor !(kg/kg)
+      REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(IN) :: pressure !(Pa)
+      REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(IN) :: temperature !(K)
+
+
       REAL, DIMENSION(ims:ime, jms:jme), INTENT(IN) :: rainrate_observations ! mm/hr
 
       INTEGER, INTENT(IN) :: lhn_start ! LHN start time in seconds from simulation start time
@@ -51,6 +63,7 @@ CONTAINS
       REAL, INTENT(IN) :: lhn_smooth_filter_sigma ! LHN horizontal recursive filter standard deviation in grid points
 
       REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(OUT) :: latent_heat_tendency
+      REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(OUT) :: qvapor_adjustment_tend
 
       INTEGER, INTENT(IN) :: ids
       INTEGER, INTENT(IN) :: ide
@@ -69,8 +82,8 @@ CONTAINS
       INTEGER, DIMENSION(num_tiles), INTENT(IN) :: i_end
       INTEGER, DIMENSION(num_tiles), INTENT(IN) :: j_start
       INTEGER, DIMENSION(num_tiles), INTENT(IN) :: j_end
-      INTEGER, INTENT(IN) :: k_start
-      INTEGER, INTENT(IN) :: k_end
+      INTEGER, INTENT(IN) :: k_start ! memory patch start in k
+      INTEGER, INTENT(IN) :: k_end ! memory patch end in k
       ! -------------------End Subroutine Parameters Declarations ---------------------------------
 
       ! -------------------- Local variables Declarations -------------------------------------------
@@ -84,7 +97,8 @@ CONTAINS
       INTEGER :: jts
       INTEGER :: jte
       INTEGER :: kts
-      INTEGER :: kte
+      INTEGER :: kte_unstag
+!      INTEGER :: kte_stag
       INTEGER :: current_profile_num
       INTEGER :: ii
       INTEGER :: jj
@@ -102,7 +116,8 @@ CONTAINS
 
       kts = k_start
 
-      kte = min(k_end, kde - 1)
+!      kte_stag = min(k_end, kde)   ! correspond to the end of the domain in the staggered Z dimension!
+      kte_unstag = min(k_end, kde - 1) ! correspond to the end of the domain in the unstaggered Z dimension!
 
       ! Just in case that a rounding or trucation error is present
       IF (search_range > 1.) THEN ! Search range bigger tha 1, otherwise is considered as zero
@@ -130,6 +145,10 @@ CONTAINS
             DO i = its, ite
             DO j = jts, jte
                model_rainrate(i, j) = (RAINCV(i, j) + RAINSHV(i, j) + RAINNCV(i, j))*3600./dt ! in mm/hr
+               DO k = kts, kte_unstag
+                  model_latent_heating(i, k, j) = microphysics_latent_heating(i, k, j) + &
+                                                  cumulus_latent_heating(i, k, j)
+               ENDDO
             ENDDO
             ENDDO
          ENDDO
@@ -179,27 +198,24 @@ CONTAINS
 
                   latent_heat_factor = (rainrate_observations(i, j)/model_rainrate(i, j)) - 1.0
 
-                  DO k = kts, kte
-                     latent_heat_tendency(i, k, j) = (microphysics_latent_heating(i, k, j) + &
-                                                      cumulus_latent_heating(i, k, j))*latent_heat_factor
+                  DO k = kts, kte_unstag
+                     latent_heat_tendency(i, k, j) = model_latent_heating(i, k, j)*latent_heat_factor
                   ENDDO
 
                ELSE IF (profile_found == NEARBY_PROFILE_FOUND) THEN
                   !write(*,*) 'NEARBY_PROFILE_FOUND','i=',i,'j=',j,'i_profile',i_profile,'j_profile',j_profile
                   latent_heat_factor = (rainrate_observations(i, j)/model_rainrate(i_profile, j_profile))
 
-                  DO k = kts, kte
-                     latent_heat_tendency(i, k, j) = ((microphysics_latent_heating(i_profile, k, j_profile) + &
-                                                       cumulus_latent_heating(i_profile, k, j_profile))*latent_heat_factor - &
-                                                      (microphysics_latent_heating(i, k, j) + &
-                                                       cumulus_latent_heating(i, k, j)))
+                  DO k = kts, kte_unstag
+                     latent_heat_tendency(i, k, j) = (model_latent_heating(i_profile, k, j_profile)*latent_heat_factor - &
+                                                      model_latent_heating(i, k, j))
 
                   ENDDO
 
-               ELSE !profile_found == NO_PROFILE_FOUND
+               ELSE !profile_found == NO_PROFILE_FOUND !TODO: Use climatological profile!
 
                   IF (abs(rainrate_observations(i, j) - model_rainrate(i, j)) < 0.001) THEN
-                     DO k = kts, kte
+                     DO k = kts, kte_unstag
                         latent_heat_tendency(i, k, j) = 0.
                      ENDDO
                   ELSE
@@ -211,9 +227,8 @@ CONTAINS
                         latent_heat_factor = minimum_profile_scaling - 1.
                      ENDIF
 
-                     DO k = kts, kte
-                        latent_heat_tendency(i, k, j) = (microphysics_latent_heating(i, k, j) + &
-                                                         cumulus_latent_heating(i, k, j))*latent_heat_factor
+                     DO k = kts, kte_unstag
+                        latent_heat_tendency(i, k, j) = model_latent_heating(i, k, j)*latent_heat_factor
                      ENDDO
                   ENDIF
 
@@ -250,9 +265,20 @@ CONTAINS
                                      ids, ide, jds, jde, kds, kde, &
                                      ims, ime, jms, jme, kms, kme)
          ENDIF
+
+         ! Adjust humidity to keep the Relative humidity constant
+         CALL adjust_humidity(temperature, pressure, qvapor, dt, &
+                              model_latent_heating, latent_heat_tendency, &
+                              qvapor_adjustment_tend, &
+                              ids, ide, jds, jde, kds, kde, &
+                              ims, ime, jms, jme, kms, kme, &
+                              num_tiles, i_start, i_end, j_start, j_end, &
+                              kts, kte_unstag)
+
       ELSE ! Do not apply latent heat nudging
 
          latent_heat_tendency(:, :, :) = 0.
+         qvapor_adjustment_tend(:, :, :) = 0.
 
       ENDIF
 
@@ -489,8 +515,148 @@ CONTAINS
       ENDDO
 !$OMP END PARALLEL DO
 
-      input_3d = backward_filter  ! Improve memory usage!!
+      input_3d = backward_filter ! Improve memory usage!!
 
    END SUBROUTINE recursive_filter_2d
+
+   SUBROUTINE adjust_humidity(temperature, pressure, qvapor, dt, &
+                              model_latent_heating, latent_heat_tendency, &
+                              qvapor_adjustment_tend, &
+                              ids, ide, jds, jde, kds, kde, &
+                              ims, ime, jms, jme, kms, kme, &
+                              num_tiles, i_start, i_end, j_start, j_end, &
+                              kts, kte_unstag)
+
+      IMPLICIT NONE
+      !------------------------------ Subroutine Parameters Declarations --------------------------
+
+      REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(IN) :: temperature ![K]
+      REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(IN) :: pressure ![Pa]
+      REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(IN) :: qvapor ![kg/kg]
+      REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(IN) :: model_latent_heating ![K/s]
+      REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(IN) :: latent_heat_tendency ![K/s]
+      REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(OUT) :: qvapor_adjustment_tend ![kg/kg/s]
+
+      REAL, INTENT(IN) :: dt ![s]
+
+      INTEGER, INTENT(IN) :: num_tiles
+      INTEGER, DIMENSION(num_tiles), INTENT(IN) :: i_start
+      INTEGER, DIMENSION(num_tiles), INTENT(IN) :: i_end
+      INTEGER, DIMENSION(num_tiles), INTENT(IN) :: j_start
+      INTEGER, DIMENSION(num_tiles), INTENT(IN) :: j_end
+      INTEGER, INTENT(IN) :: kts ! memory patch start in k
+      INTEGER, INTENT(IN) :: kte_unstag ! memory patch end in k
+      INTEGER, INTENT(IN) :: ids
+      INTEGER, INTENT(IN) :: ide
+      INTEGER, INTENT(IN) :: jds
+      INTEGER, INTENT(IN) :: jde
+      INTEGER, INTENT(IN) :: kds
+      INTEGER, INTENT(IN) :: kde
+      INTEGER, INTENT(IN) :: ims
+      INTEGER, INTENT(IN) :: ime
+      INTEGER, INTENT(IN) :: jms
+      INTEGER, INTENT(IN) :: jme
+      INTEGER, INTENT(IN) :: kms
+      INTEGER, INTENT(IN) :: kme
+
+      !------------------------------ Local Parameters Declarations --------------------------
+
+      REAL :: newTemperature ! expected temperature at the end of the timestep due to model latent heating
+      REAL :: newNudgedTemperature ! expected temperature at the end of the timestep after nudging
+      REAL :: es
+      REAL :: lhn_qvapor_saturation, model_qvapor_saturation
+
+      REAL, PARAMETER :: no_heating_tolerance = 1e-10 ![k/s]
+
+      INTEGER :: i, j, k, tile
+      INTEGER :: its
+      INTEGER :: ite
+      INTEGER :: jts
+      INTEGER :: jte
+
+!$OMP PARALLEL DO SCHEDULE(DYNAMIC) default(shared) &
+!$OMP PRIVATE ( tile ,its,ite,jts,jte, i,j)
+      DO tile = 1, num_tiles
+         its = i_start(tile)
+         ite = i_end(tile)
+         jts = j_start(tile)
+         jte = j_end(tile)
+
+         DO i = its, ite
+         DO j = jts, jte
+
+            DO k = kts, kte_unstag
+
+               IF (ABS(latent_heat_tendency(i, k, j)) > no_heating_tolerance) THEN
+                  newTemperature = temperature(i, k, j) + model_latent_heating(i, k, j)*dt
+                  newNudgedTemperature = temperature(i, k, j) + &
+                                         (model_latent_heating(i, k, j) + latent_heat_tendency(i, k, j))*dt
+
+                  ! Bolton, 1980 formula
+                  es = SVP1_Pa*EXP(SVP2*(newTemperature - SVPT0)/(newTemperature - SVP3))
+                  model_qvapor_saturation = EP_2*es/(pressure(i, k, j) - es)
+
+                  es = SVP1_Pa*EXP(SVP2*(newNudgedTemperature - SVPT0)/(newNudgedTemperature - SVP3))
+                  lhn_qvapor_saturation = EP_2*es/(pressure(i, k, j) - es)
+
+                  qvapor_adjustment_tend(i, k, j) = qvapor(i, k, j)*(lhn_qvapor_saturation/model_qvapor_saturation - 1.0)
+               ELSE
+                  qvapor_adjustment_tend(i, k, j) = 0.
+               ENDIF
+
+            ENDDO
+         ENDDO
+         ENDDO
+      ENDDO
+!$OMP END PARALLEL DO
+
+   END SUBROUTINE adjust_humidity
+
+   SUBROUTINE saturation_vapor_mixing_ratio(temperature, pressure, &
+                                            qvapor_saturation, &
+                                            ids, ide, jds, jde, kds, kde, &
+                                            ims, ime, jms, jme, kms, kme)
+
+      IMPLICIT NONE
+      !------------------------------ Subroutine Parameters Declarations --------------------------
+      INTEGER, INTENT(IN) :: ids
+      INTEGER, INTENT(IN) :: ide
+      INTEGER, INTENT(IN) :: jds
+      INTEGER, INTENT(IN) :: jde
+      INTEGER, INTENT(IN) :: kds
+      INTEGER, INTENT(IN) :: kde
+      INTEGER, INTENT(IN) :: ims
+      INTEGER, INTENT(IN) :: ime
+      INTEGER, INTENT(IN) :: jms
+      INTEGER, INTENT(IN) :: jme
+      INTEGER, INTENT(IN) :: kms
+      INTEGER, INTENT(IN) :: kme
+
+      REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(IN) :: temperature ![K]
+      REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(IN) :: pressure ![Pa]
+      REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(OUT) :: qvapor_saturation ![kg/kg]
+
+      !------------------------------ Local Parameters Declarations --------------------------
+      REAL :: es
+      INTEGER :: i, j, k
+
+!$OMP PARALLEL DO SCHEDULE(DYNAMIC) default(shared) &
+!$OMP PRIVATE ( k )
+      DO k = kds, kde
+         DO j = jds, jde
+            DO i = ids, ide
+               ! Bolton, 1980 formula
+               es = SVP1_Pa*EXP(SVP2*(temperature(i, k, j) - SVPT0)/(temperature(i, k, j) - SVP3))
+
+               qvapor_saturation(i, k, j) = EP_2*es/(pressure(i, k, j) - es)
+
+            ENDDO
+
+         ENDDO
+
+      ENDDO
+!$OMP END PARALLEL DO
+
+   END SUBROUTINE saturation_vapor_mixing_ratio
 
 END MODULE module_latent_heat_nudging

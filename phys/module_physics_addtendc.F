@@ -38,6 +38,7 @@ SUBROUTINE update_phy_ten(rph_tendf,rt_tendf,ru_tendf,rv_tendf,moist_tendf, &
                       RUNDGDTEN,RVNDGDTEN,RTHNDGDTEN,RPHNDGDTEN,            &
                       RQVNDGDTEN,RMUNDGDTEN,                                &
                       latent_heat_tendency,                                 &
+                      qvapor_adjustment_tend,                               &
                       rthfrten,rqvfrten,                                    & !fire
                       n_moist,n_scalar,config_flags,rk_step,adv_moist_cond, &
                       ids, ide, jds, jde, kds, kde,                         &
@@ -105,7 +106,8 @@ SUBROUTINE update_phy_ten(rph_tendf,rt_tendf,ru_tendf,rv_tendf,moist_tendf, &
                                                      RQVNDGDTEN, &
                                                       RUNDGDTEN, &
                                                       RVNDGDTEN, &
-                                                      latent_heat_tendency
+                                                      latent_heat_tendency, &
+                                                      qvapor_adjustment_tend
 
    REAL, DIMENSION(ims:ime, jms:jme), INTENT(IN  ) :: RMUNDGDTEN
 
@@ -182,7 +184,16 @@ SUBROUTINE update_phy_ten(rph_tendf,rt_tendf,ru_tendf,rv_tendf,moist_tendf, &
                   ims, ime, jms, jme, kms, kme,                    &
                   its, ite, jts, jte, kts, kte                     )
 
+       if (P_QV .ge. PARAM_FIRST_SCALAR) THEN
+            CALL add_a2a(moist_tendf(ims, kms, jms, P_QV), qvapor_adjustment_tend, &
+                         config_flags, &
+                         ids, ide, jds, jde, kds, kde, &
+                         ims, ime, jms, jme, kms, kme, &
+                         its, ite, jts, jte, kts, kte)
+         endif
+
   endif
+
 
 END SUBROUTINE update_phy_ten
 
