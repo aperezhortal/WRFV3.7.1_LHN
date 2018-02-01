@@ -21,6 +21,7 @@ CONTAINS
                                        raincv, rainshv, rainncv, &
                                        temperature, &
                                        qvapor, pressure, &
+                                       exner_function, &
                                        rainrate_observations, &
                                        lhn_start, lhn_end, &
                                        latent_heat_tendency, qvapor_adjustment_tend, &
@@ -54,6 +55,8 @@ CONTAINS
       REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(IN) :: qvapor !(kg/kg)
       REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(IN) :: pressure !(Pa)
       REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(IN) :: temperature !(K)
+      REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(IN) :: exner_function !dimensionless
+
 
 
       REAL, DIMENSION(ims:ime, jms:jme), INTENT(IN) :: rainrate_observations ! mm/hr
@@ -146,8 +149,10 @@ CONTAINS
             DO j = jts, jte
                model_rainrate(i, j) = (RAINCV(i, j) + RAINSHV(i, j) + RAINNCV(i, j))*3600./dt ! in mm/hr
                DO k = kts, kte_unstag
-                  model_latent_heating(i, k, j) = microphysics_latent_heating(i, k, j) + &
-                                                  cumulus_latent_heating(i, k, j)
+                  model_latent_heating(i, k, j) = cumulus_latent_heating(i, k, j) + &
+                                                  microphysics_latent_heating(i, k, j)
+
+
                ENDDO
             ENDDO
             ENDDO
@@ -241,6 +246,23 @@ CONTAINS
          ENDDO
 !$OMP END PARALLEL DO
 
+
+         IF (lhn_smooth_filter_sigma > 0.0001) THEN
+            CALL recursive_filter_2d(latent_heat_tendency, &
+                                     lhn_smooth_filter_sigma, &
+                                     ids, ide, jds, jde, kds, kde, &
+                                     ims, ime, jms, jme, kms, kme)
+         ENDIF
+
+         ! Adjust humidity to keep the Relative humidity constant
+         CALL adjust_humidity(temperature, pressure, qvapor, exner_function,dt, &
+                              model_latent_heating, latent_heat_tendency, &
+                              qvapor_adjustment_tend, &
+                              ids, ide, jds, jde, kds, kde, &
+                              ims, ime, jms, jme, kms, kme, &
+                              num_tiles, i_start, i_end, j_start, j_end, &
+                              kts, kte_unstag)
+
          write (*, *)
          write (*, *) "minimum_profile_scaling", minimum_profile_scaling
          write (*, *) "maximum_profile_scaling", maximum_profile_scaling
@@ -258,22 +280,11 @@ CONTAINS
          write (*, *)
          write (*, *) "Max model_rainrate:", MAXVAL(model_rainrate(ids:ide, jds:jde))
          write (*, *) "Max rainrate_observations:", MAXVAL(rainrate_observations(ids:ide, jds:jde))
+         write (*, *)
+         write (*, *) "Min qvapor_adjustment_tend:", MINVAL(qvapor_adjustment_tend(ids:ide, kds:kde, jds:jde))*1000
+         write (*, *) "Max qvapor_adjustment_tend:", MAXVAL(qvapor_adjustment_tend(ids:ide, kds:kde, jds:jde))*1000
 
-         IF (lhn_smooth_filter_sigma > 0.0001) THEN
-            CALL recursive_filter_2d(latent_heat_tendency, &
-                                     lhn_smooth_filter_sigma, &
-                                     ids, ide, jds, jde, kds, kde, &
-                                     ims, ime, jms, jme, kms, kme)
-         ENDIF
 
-         ! Adjust humidity to keep the Relative humidity constant
-         CALL adjust_humidity(temperature, pressure, qvapor, dt, &
-                              model_latent_heating, latent_heat_tendency, &
-                              qvapor_adjustment_tend, &
-                              ids, ide, jds, jde, kds, kde, &
-                              ims, ime, jms, jme, kms, kme, &
-                              num_tiles, i_start, i_end, j_start, j_end, &
-                              kts, kte_unstag)
 
       ELSE ! Do not apply latent heat nudging
 
@@ -281,6 +292,7 @@ CONTAINS
          qvapor_adjustment_tend(:, :, :) = 0.
 
       ENDIF
+
 
    END SUBROUTINE latent_heat_nudging_JM97
 
@@ -519,7 +531,7 @@ CONTAINS
 
    END SUBROUTINE recursive_filter_2d
 
-   SUBROUTINE adjust_humidity(temperature, pressure, qvapor, dt, &
+   SUBROUTINE adjust_humidity(temperature, pressure, qvapor,exner_function, dt, &
                               model_latent_heating, latent_heat_tendency, &
                               qvapor_adjustment_tend, &
                               ids, ide, jds, jde, kds, kde, &
@@ -533,6 +545,9 @@ CONTAINS
       REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(IN) :: temperature ![K]
       REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(IN) :: pressure ![Pa]
       REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(IN) :: qvapor ![kg/kg]
+      REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(IN) :: exner_function ! dimensionless
+
+
       REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(IN) :: model_latent_heating ![K/s]
       REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(IN) :: latent_heat_tendency ![K/s]
       REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(OUT) :: qvapor_adjustment_tend ![kg/kg/s]
@@ -575,7 +590,8 @@ CONTAINS
       INTEGER :: jte
 
 !$OMP PARALLEL DO SCHEDULE(DYNAMIC) default(shared) &
-!$OMP PRIVATE ( tile ,its,ite,jts,jte, i,j)
+!$OMP PRIVATE ( tile ,its,ite,jts,jte, i,j)&
+!$OMP PRIVATE ( newTemperature,newNudgedTemperature,es,model_qvapor_saturation,lhn_qvapor_saturation)
       DO tile = 1, num_tiles
          its = i_start(tile)
          ite = i_end(tile)
@@ -588,9 +604,11 @@ CONTAINS
             DO k = kts, kte_unstag
 
                IF (ABS(latent_heat_tendency(i, k, j)) > no_heating_tolerance) THEN
-                  newTemperature = temperature(i, k, j) + model_latent_heating(i, k, j)*dt
+
+                  newTemperature = temperature(i, k, j) + model_latent_heating(i, k, j)*exner_function(i,k,j)*dt
+
                   newNudgedTemperature = temperature(i, k, j) + &
-                                         (model_latent_heating(i, k, j) + latent_heat_tendency(i, k, j))*dt
+                                         (model_latent_heating(i, k, j) + latent_heat_tendency(i, k, j))*exner_function(i,k,j)*dt
 
                   ! Bolton, 1980 formula
                   es = SVP1_Pa*EXP(SVP2*(newTemperature - SVPT0)/(newTemperature - SVP3))
@@ -599,7 +617,29 @@ CONTAINS
                   es = SVP1_Pa*EXP(SVP2*(newNudgedTemperature - SVPT0)/(newNudgedTemperature - SVP3))
                   lhn_qvapor_saturation = EP_2*es/(pressure(i, k, j) - es)
 
-                  qvapor_adjustment_tend(i, k, j) = qvapor(i, k, j)*(lhn_qvapor_saturation/model_qvapor_saturation - 1.0)
+!                  IF (ABS(lhn_qvapor_saturation/model_qvapor_saturation) > 1.01) THEN
+!                    write(*,*)
+!                    write(*,*)
+!                    write(*,*) "temperature", temperature(i, k, j)
+!                    write(*,*) "newTemperature",newTemperature
+!                    write(*,*)
+!                    write(*,*) "TH", temperature(i, k, j)/exner_function(i,k,j)
+!                    write(*,*) "TH_new", (temperature(i, k, j)/exner_function(i,k,j) + model_latent_heating(i, k, j)*dt)
+!                    write(*,*) "Model Heating", model_latent_heating(i, k, j)*dt
+!                    write(*,*) "Model Heating2", model_latent_heating(i, k, j)*exner_function(i,k,j)*dt
+!                    write(*,*)
+!                    write(*,*) "T_new", model_latent_heating(i, k, j)*dt
+!                    write(*,*)
+!                    write(*,*) "newNudgedTemperature",newNudgedTemperature
+!                    write(*,*) "es",es
+!                    write(*,*)
+!                    write(*,*) "lhn_qvapor_saturation",lhn_qvapor_saturation
+!                    write(*,*) "model_qvapor_saturation",model_qvapor_saturation
+!
+!
+!                  ENDIF
+
+                  qvapor_adjustment_tend(i, k, j) = qvapor(i, k, j)*(lhn_qvapor_saturation/model_qvapor_saturation - 1.0)/dt
                ELSE
                   qvapor_adjustment_tend(i, k, j) = 0.
                ENDIF
@@ -612,51 +652,5 @@ CONTAINS
 
    END SUBROUTINE adjust_humidity
 
-   SUBROUTINE saturation_vapor_mixing_ratio(temperature, pressure, &
-                                            qvapor_saturation, &
-                                            ids, ide, jds, jde, kds, kde, &
-                                            ims, ime, jms, jme, kms, kme)
-
-      IMPLICIT NONE
-      !------------------------------ Subroutine Parameters Declarations --------------------------
-      INTEGER, INTENT(IN) :: ids
-      INTEGER, INTENT(IN) :: ide
-      INTEGER, INTENT(IN) :: jds
-      INTEGER, INTENT(IN) :: jde
-      INTEGER, INTENT(IN) :: kds
-      INTEGER, INTENT(IN) :: kde
-      INTEGER, INTENT(IN) :: ims
-      INTEGER, INTENT(IN) :: ime
-      INTEGER, INTENT(IN) :: jms
-      INTEGER, INTENT(IN) :: jme
-      INTEGER, INTENT(IN) :: kms
-      INTEGER, INTENT(IN) :: kme
-
-      REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(IN) :: temperature ![K]
-      REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(IN) :: pressure ![Pa]
-      REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(OUT) :: qvapor_saturation ![kg/kg]
-
-      !------------------------------ Local Parameters Declarations --------------------------
-      REAL :: es
-      INTEGER :: i, j, k
-
-!$OMP PARALLEL DO SCHEDULE(DYNAMIC) default(shared) &
-!$OMP PRIVATE ( k )
-      DO k = kds, kde
-         DO j = jds, jde
-            DO i = ids, ide
-               ! Bolton, 1980 formula
-               es = SVP1_Pa*EXP(SVP2*(temperature(i, k, j) - SVPT0)/(temperature(i, k, j) - SVP3))
-
-               qvapor_saturation(i, k, j) = EP_2*es/(pressure(i, k, j) - es)
-
-            ENDDO
-
-         ENDDO
-
-      ENDDO
-!$OMP END PARALLEL DO
-
-   END SUBROUTINE saturation_vapor_mixing_ratio
 
 END MODULE module_latent_heat_nudging
