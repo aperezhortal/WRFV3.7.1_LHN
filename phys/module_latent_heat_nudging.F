@@ -13,8 +13,13 @@ MODULE module_latent_heat_nudging
 
 CONTAINS
 
-   ! Jones, C. D., & Macpherson, B. (1997). A latent heat nudging scheme for the assimilation of precipitation data
-   ! into an operational mesoscale model. Meteorological Applications, 4(3), 269-277.
+   !> Latent Heat Nudging A latent heat nudging scheme for the assimilation of precipitation data.
+   !!
+   !!  "It is based on latent heat nudging, in which the model profiles of latent heating are scaled by the ratio of observed
+   !!and model precipitation rates. This causes the model to adjust so that the diagnosed precipitation rate
+   !! agrees more closely with observations."
+   !! Jones, C. D., & Macpherson, B. (1997). A latent heat nudging scheme for the assimilation of precipitation data
+   !! into an operational mesoscale model. Meteorological Applications, 4(3), 269-277.
    SUBROUTINE latent_heat_nudging_JM97(current_time_in_seconds, dt, dx, &
                                        microphysics_latent_heating, &
                                        cumulus_latent_heating, &
@@ -28,6 +33,7 @@ CONTAINS
                                        minimum_profile_scaling, maximum_profile_scaling, &
                                        search_range, &
                                        lhn_smooth_filter_sigma, &
+                                       lhn_limit, &
                                        ids, ide, jds, jde, kds, kde, &
                                        ims, ime, jms, jme, kms, kme, &
                                        num_tiles, i_start, i_end, j_start, j_end, &
@@ -37,56 +43,73 @@ CONTAINS
 
       !------------------------------ Subroutine Parameters Declarations --------------------------
 
-      INTEGER, INTENT(IN) :: current_time_in_seconds
-      REAL, INTENT(IN) :: dt ! in seconds
-      REAL, INTENT(IN) :: dx
+      INTEGER, INTENT(IN) :: current_time_in_seconds ! Simulation time in seconds from the beggiging [s].
+      REAL, INTENT(IN) :: dt ! Timestep [s].
+      REAL, INTENT(IN) :: dx ! Horizontal resolution [m].
 
+      !> Minimum factor to scales the model latent heating profile.
       REAL, INTENT(IN) :: minimum_profile_scaling
+
+      !> Minimum factor to scales the model latent heating profile.
       REAL, INTENT(IN) :: maximum_profile_scaling
-      REAL, INTENT(IN) :: search_range ![meters]
 
-      REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(IN) :: microphysics_latent_heating !(K/s)
-      REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(IN) :: cumulus_latent_heating !(K/s)
+      !> Maximum search range in meters where a nearby profile is searched [m].
+      ! If the range is equal to zero, no profiles are search.
+      REAL, INTENT(IN) :: search_range
 
-      REAL, DIMENSION(ims:ime, jms:jme), INTENT(IN) :: raincv !time-step cumulus precipitation in mm
-      REAL, DIMENSION(ims:ime, jms:jme), INTENT(IN) :: rainshv !time-step shallow cumulus precipitation in mm
-      REAL, DIMENSION(ims:ime, jms:jme), INTENT(IN) :: rainncv !time-step non convective precipitation in mm
+      !> Latent heat nudging absolute limit for pot. temperature [K/s]
+      REAL, INTENT(IN) :: lhn_limit
 
-      REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(IN) :: qvapor !(kg/kg)
-      REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(IN) :: pressure !(Pa)
-      REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(IN) :: temperature !(K)
-      REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(IN) :: exner_function !dimensionless
+      !> Latent heating tendency (Potential temperature) due to the microphysics scheme [K/s].
+      REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(IN) :: microphysics_latent_heating
 
+      !> Latent heating tendency (Potential temperature) due to the cumulus scheme [K/s].
+      REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(IN) :: cumulus_latent_heating
 
+      REAL, DIMENSION(ims:ime, jms:jme), INTENT(IN) :: raincv ! Time-step cumulus precipitation [mm].
+      REAL, DIMENSION(ims:ime, jms:jme), INTENT(IN) :: rainshv ! Time-step shallow cumulus precipitation [mm].
+      REAL, DIMENSION(ims:ime, jms:jme), INTENT(IN) :: rainncv ! Time-step non convective precipitation [mm].
 
-      REAL, DIMENSION(ims:ime, jms:jme), INTENT(IN) :: rainrate_observations ! mm/hr
+      REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(IN) :: qvapor !Vapor mixing ration [kg/kg].
+      REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(IN) :: pressure ! Total presure [Pa].
+      REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(IN) :: temperature ! Temperature [K].
+      REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(IN) :: exner_function ! Exner function.
 
-      INTEGER, INTENT(IN) :: lhn_start ! LHN start time in seconds from simulation start time
-      INTEGER, INTENT(IN) :: lhn_end ! LHN end time in seconds from simulation start time
-      REAL, INTENT(IN) :: lhn_smooth_filter_sigma ! LHN horizontal recursive filter standard deviation in grid points
+      REAL, DIMENSION(ims:ime, jms:jme), INTENT(IN) :: rainrate_observations ! Rainrate observations [mm/hr].
 
+      INTEGER, INTENT(IN) :: lhn_start ! LHN start time from the beggining of the simulation [s].
+      INTEGER, INTENT(IN) :: lhn_end ! LHN end time from the beggining of the simulation [s].
+
+      !> Standard deviation of the gaussian filter in the horizontal dimension [grid points].
+      ! If sigma = 0 no filter is applied.
+      REAL, INTENT(IN) :: lhn_smooth_filter_sigma
+
+      !> Latent heat Nudging Tendency for the Potential temperature [K/s].
       REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(OUT) :: latent_heat_tendency
+
+      !> Vapor mixing ratio tendency due to the Latent heat Nudging [Kg/Kg/s].
       REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(OUT) :: qvapor_adjustment_tend
 
-      INTEGER, INTENT(IN) :: ids
-      INTEGER, INTENT(IN) :: ide
-      INTEGER, INTENT(IN) :: jds
-      INTEGER, INTENT(IN) :: jde
-      INTEGER, INTENT(IN) :: kds
-      INTEGER, INTENT(IN) :: kde
-      INTEGER, INTENT(IN) :: ims
-      INTEGER, INTENT(IN) :: ime
-      INTEGER, INTENT(IN) :: jms
-      INTEGER, INTENT(IN) :: jme
-      INTEGER, INTENT(IN) :: kms
-      INTEGER, INTENT(IN) :: kme
-      INTEGER, INTENT(IN) :: num_tiles
-      INTEGER, DIMENSION(num_tiles), INTENT(IN) :: i_start
-      INTEGER, DIMENSION(num_tiles), INTENT(IN) :: i_end
-      INTEGER, DIMENSION(num_tiles), INTENT(IN) :: j_start
-      INTEGER, DIMENSION(num_tiles), INTENT(IN) :: j_end
-      INTEGER, INTENT(IN) :: k_start ! memory patch start in k
-      INTEGER, INTENT(IN) :: k_end ! memory patch end in k
+      INTEGER, INTENT(IN) :: ids ! Start index for i in domain.
+      INTEGER, INTENT(IN) :: ide ! End index for i in domain (staggered grid).
+      INTEGER, INTENT(IN) :: jds ! Start index for j in domain.
+      INTEGER, INTENT(IN) :: jde ! End index for j in domain (staggered grid).
+      INTEGER, INTENT(IN) :: kds ! Start index for k in domain.
+      INTEGER, INTENT(IN) :: kde ! End index for  in domain (staggered grid).
+      INTEGER, INTENT(IN) :: ims ! Start index for i in memory.
+      INTEGER, INTENT(IN) :: ime ! End index for i in memory.
+      INTEGER, INTENT(IN) :: jms ! Start index for j in memory.
+      INTEGER, INTENT(IN) :: jme ! End index for j in memory.
+      INTEGER, INTENT(IN) :: kms ! Start index for k in memory.
+      INTEGER, INTENT(IN) :: kme ! End index for k in memory.
+      INTEGER, INTENT(IN) :: num_tiles ! Number of tiles.
+      INTEGER, DIMENSION(num_tiles), INTENT(IN) :: i_start ! Start index for i in each tile.
+      INTEGER, DIMENSION(num_tiles), INTENT(IN) :: i_end ! End index for i in each tile.
+      INTEGER, DIMENSION(num_tiles), INTENT(IN) :: j_start ! Start index for j in each tile.
+      INTEGER, DIMENSION(num_tiles), INTENT(IN) :: j_end ! End index for j in each tile.
+      INTEGER, INTENT(IN) :: k_start ! Memory patch start in k.
+      INTEGER, INTENT(IN) :: k_end ! Memory patch end in k.
+
       ! -------------------End Subroutine Parameters Declarations ---------------------------------
 
       ! -------------------- Local variables Declarations -------------------------------------------
@@ -101,10 +124,6 @@ CONTAINS
       INTEGER :: jte
       INTEGER :: kts
       INTEGER :: kte_unstag
-!      INTEGER :: kte_stag
-      INTEGER :: current_profile_num
-      INTEGER :: ii
-      INTEGER :: jj
       INTEGER :: tile
       REAL :: latent_heat_factor
       LOGICAL :: apply_latent_heat_nudging
@@ -119,7 +138,6 @@ CONTAINS
 
       kts = k_start
 
-!      kte_stag = min(k_end, kde)   ! correspond to the end of the domain in the staggered Z dimension!
       kte_unstag = min(k_end, kde - 1) ! correspond to the end of the domain in the unstaggered Z dimension!
 
       ! Just in case that a rounding or trucation error is present
@@ -138,7 +156,7 @@ CONTAINS
          ! First compute the model rainrate
 
 !$OMP PARALLEL DO SCHEDULE(DYNAMIC) default(shared) &
-!$OMP PRIVATE ( tile ,its,ite,jts,jte, i,j)
+!$OMP PRIVATE ( tile ,its,ite,jts,jte, i,j,k)
          DO tile = 1, num_tiles
             its = i_start(tile)
             ite = i_end(tile)
@@ -149,9 +167,8 @@ CONTAINS
             DO j = jts, jte
                model_rainrate(i, j) = (RAINCV(i, j) + RAINSHV(i, j) + RAINNCV(i, j))*3600./dt ! in mm/hr
                DO k = kts, kte_unstag
-                  model_latent_heating(i, k, j) = cumulus_latent_heating(i, k, j) + &
-                                                  microphysics_latent_heating(i, k, j)
-
+                  model_latent_heating(i, k, j) = microphysics_latent_heating(i, k, j) + &
+                                                  cumulus_latent_heating(i, k, j)
 
                ENDDO
             ENDDO
@@ -161,7 +178,7 @@ CONTAINS
 
          ! Check which model grid points meet the desired criteria
 !$OMP PARALLEL DO SCHEDULE(DYNAMIC) default(shared) &
-!$OMP PRIVATE ( tile ,its,ite,jts,jte, i,j,i_profile, j_profile,profile_found)
+!$OMP PRIVATE ( tile ,its,ite,jts,jte, i,j,k,i_profile, j_profile,profile_found)
          DO tile = 1, num_tiles
             its = i_start(tile)
             ite = i_end(tile)
@@ -178,7 +195,6 @@ CONTAINS
                    (rainrate_observations(i, j) > model_rainrate(i, j)*minimum_profile_scaling)) THEN
 
                   profile_found = PROFILE_CRITERIA_MEET
-!                  write(*,*) "Found!"
 
                ELSE IF (max_number_of_grid_points > .0) THEN
                   ! IF criteria is not met, perform an spiral search in the nearby profiles
@@ -208,7 +224,6 @@ CONTAINS
                   ENDDO
 
                ELSE IF (profile_found == NEARBY_PROFILE_FOUND) THEN
-                  !write(*,*) 'NEARBY_PROFILE_FOUND','i=',i,'j=',j,'i_profile',i_profile,'j_profile',j_profile
                   latent_heat_factor = (rainrate_observations(i, j)/model_rainrate(i_profile, j_profile))
 
                   DO k = kts, kte_unstag
@@ -246,7 +261,7 @@ CONTAINS
          ENDDO
 !$OMP END PARALLEL DO
 
-
+         ! Apply the Gaussian smoothing
          IF (lhn_smooth_filter_sigma > 0.0001) THEN
             CALL recursive_filter_2d(latent_heat_tendency, &
                                      lhn_smooth_filter_sigma, &
@@ -254,11 +269,37 @@ CONTAINS
                                      ims, ime, jms, jme, kms, kme)
          ENDIF
 
+         ! Keep the LHN between bounds
+!$OMP PARALLEL DO SCHEDULE(DYNAMIC) default(shared) &
+!$OMP PRIVATE ( tile ,its,ite,jts,jte, i,j,k)
+         DO tile = 1, num_tiles
+            its = i_start(tile)
+            ite = i_end(tile)
+            jts = j_start(tile)
+            jte = j_end(tile)
+
+            DO i = its, ite
+            DO j = jts, jte
+               DO k = kts, kte_unstag
+                  IF (latent_heat_tendency(i, k, j) > lhn_limit) THEN
+                     latent_heat_tendency(i, k, j) = lhn_limit
+                  ENDIF
+
+                  IF (latent_heat_tendency(i, k, j) < -lhn_limit) THEN
+                     latent_heat_tendency(i, k, j) = -lhn_limit
+                  ENDIF
+               ENDDO
+
+            ENDDO
+            ENDDO
+         ENDDO
+!$OMP END PARALLEL DO
+
          ! Adjust humidity to keep the Relative humidity constant
-         CALL adjust_humidity(temperature, pressure, qvapor, exner_function,dt, &
+         CALL adjust_humidity(temperature, pressure, qvapor, exner_function, dt, &
                               model_latent_heating, latent_heat_tendency, &
                               qvapor_adjustment_tend, &
-                              ids, ide, jds, jde, kds, kde, &
+                              ids, ide - 1, jds, jde - 1, kds, kde - 1, &
                               ims, ime, jms, jme, kms, kme, &
                               num_tiles, i_start, i_end, j_start, j_end, &
                               kts, kte_unstag)
@@ -275,16 +316,14 @@ CONTAINS
          write (*, *) "Max cumulus_latent_heating CU:", MAXVAL(cumulus_latent_heating(ids:ide, kds:kde, jds:jde))
          write (*, *) "Max microphysics_latent_heating CU:", MAXVAL(microphysics_latent_heating(ids:ide, kds:kde, jds:jde))
          write (*, *)
-         write (*, *) "Min model_rainrate:", MINVAL(model_rainrate(ids:ide, jds:jde))
-         write (*, *) "Min rainrate_observations:", MINVAL(rainrate_observations(ids:ide, jds:jde))
+         write (*, *) "Min model_rainrate:", MINVAL(model_rainrate(ids:ide - 1, jds:jde - 1))
+         write (*, *) "Min rainrate_observations:", MINVAL(rainrate_observations(ids:ide - 1, jds:jde - 1))
          write (*, *)
-         write (*, *) "Max model_rainrate:", MAXVAL(model_rainrate(ids:ide, jds:jde))
-         write (*, *) "Max rainrate_observations:", MAXVAL(rainrate_observations(ids:ide, jds:jde))
+         write (*, *) "Max model_rainrate:", MAXVAL(model_rainrate(ids:ide - 1, jds:jde - 1))
+         write (*, *) "Max rainrate_observations:", MAXVAL(rainrate_observations(ids:ide - 1, jds:jde - 1))
          write (*, *)
          write (*, *) "Min qvapor_adjustment_tend:", MINVAL(qvapor_adjustment_tend(ids:ide, kds:kde, jds:jde))*1000
          write (*, *) "Max qvapor_adjustment_tend:", MAXVAL(qvapor_adjustment_tend(ids:ide, kds:kde, jds:jde))*1000
-
-
 
       ELSE ! Do not apply latent heat nudging
 
@@ -293,9 +332,11 @@ CONTAINS
 
       ENDIF
 
-
    END SUBROUTINE latent_heat_nudging_JM97
 
+!> Algorithm for iterating over an outward spiral on a discrete 2D grid from the origin.
+!
+! Adapted from:
 ! https://stackoverflow.com/questions/3706219/algorithm-for-iterating-over-an-outward-spiral-on-a-discrete-2d-grid-from-the-or
    SUBROUTINE spiral_profile_search(i_center, j_center, max_number_of_grid_points, &
                                     rainrate_observations, model_rainrate, &
@@ -303,29 +344,39 @@ CONTAINS
                                     ids, ide, jds, jde, &
                                     ims, ime, jms, jme, &
                                     i_profile, j_profile, profile_found)
+      IMPLICIT NONE
 
-      INTEGER, INTENT(IN) :: i_center
-      INTEGER, INTENT(IN) :: j_center
-      INTEGER, INTENT(IN) :: max_number_of_grid_points
+      !------------------------------ Subroutine Parameters Declarations --------------------------
 
-      REAL, DIMENSION(ims:ime, jms:jme), INTENT(IN) :: model_rainrate
-      REAL, DIMENSION(ims:ime, jms:jme), INTENT(IN):: rainrate_observations !(K/s)
+      INTEGER, INTENT(IN) :: i_center ! i index corresponding to the center of the spiral.
+      INTEGER, INTENT(IN) :: j_center ! j index corresponding to the center of the spiral.
+      INTEGER, INTENT(IN) :: max_number_of_grid_points ! Maximum number of points to do the spiral search.
+
+      REAL, DIMENSION(ims:ime, jms:jme), INTENT(IN) :: model_rainrate ! Model Rainrate [mm/hr].
+      REAL, DIMENSION(ims:ime, jms:jme), INTENT(IN) :: rainrate_observations ! Rainrate observations [mm/hr].
+
+      !> Minimum factor to scales the model latent heating profile.
       REAL, INTENT(IN) :: minimum_profile_scaling
+
+      !> Minimum factor to scales the model latent heating profile.
       REAL, INTENT(IN) :: maximum_profile_scaling
-      INTEGER, INTENT(IN) :: ids
-      INTEGER, INTENT(IN) :: ide
-      INTEGER, INTENT(IN) :: jds
-      INTEGER, INTENT(IN) :: jde
-      INTEGER, INTENT(IN) :: ims
-      INTEGER, INTENT(IN) :: ime
-      INTEGER, INTENT(IN) :: jms
-      INTEGER, INTENT(IN) :: jme
 
-      INTEGER, INTENT(OUT) :: i_profile
-      INTEGER, INTENT(OUT) :: j_profile
-      INTEGER, INTENT(OUT) :: profile_found
+      INTEGER, INTENT(IN) :: ids ! Start index for i in domain.
+      INTEGER, INTENT(IN) :: ide ! End index for i in domain (staggered grid).
+      INTEGER, INTENT(IN) :: jds ! Start index for j in domain.
+      INTEGER, INTENT(IN) :: jde ! End index for j in domain (staggered grid).
+      INTEGER, INTENT(IN) :: ims ! Start index for i in memory.
+      INTEGER, INTENT(IN) :: ime ! End index for i in memory.
+      INTEGER, INTENT(IN) :: jms ! Start index for j in memory.
+      INTEGER, INTENT(IN) :: jme ! End index for j in memory.
 
-      ! Local Declarations
+      INTEGER, INTENT(OUT) :: i_profile ! i index of the profile found (if any).
+      INTEGER, INTENT(OUT) :: j_profile ! j index of the profile found (if any).
+      INTEGER, INTENT(OUT) :: profile_found ! Flag indicating the result of the profile search.
+
+      ! -------------------End Subroutine Parameters Declarations ---------------------------------
+
+      ! -------------------- Local variables Declarations -------------------------------------------
       INTEGER :: di
       INTEGER :: dj
       INTEGER :: buffer
@@ -334,6 +385,7 @@ CONTAINS
       INTEGER :: segment_points_visited
       INTEGER :: segment_length
 
+      ! -------------------- End of Local variables Declarations ------------------------------------
       di = 1
       dj = 0
       number_of_steps = 1
@@ -395,6 +447,8 @@ CONTAINS
 
    END SUBROUTINE spiral_profile_search
 
+   !> 3rd order recursive filer to approximate a 2D convolution with a Gaussian Kernel of a given
+   ! standard deviation.
    SUBROUTINE recursive_filter_2d(input_3d, &
                                   sigma_in_gridpoints, &
                                   ids, ide, jds, jde, kds, kde, &
@@ -403,21 +457,26 @@ CONTAINS
       IMPLICIT NONE
 
       !------------------------------ Subroutine Parameters Declarations --------------------------
+
+      !> Input field to convolve with a Gaussian Kernel
       REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(INOUT) :: input_3d
+
+      !> Standard deviation of the gaussian filter in the horizontal dimension [grid points].
+      ! If sigma = 0 no filter is applied.
       REAL, INTENT(IN) :: sigma_in_gridpoints
 
-      INTEGER, INTENT(IN) :: ids
-      INTEGER, INTENT(IN) :: ide
-      INTEGER, INTENT(IN) :: jds
-      INTEGER, INTENT(IN) :: jde
-      INTEGER, INTENT(IN) :: kds
-      INTEGER, INTENT(IN) :: kde
-      INTEGER, INTENT(IN) :: ims
-      INTEGER, INTENT(IN) :: ime
-      INTEGER, INTENT(IN) :: jms
-      INTEGER, INTENT(IN) :: jme
-      INTEGER, INTENT(IN) :: kms
-      INTEGER, INTENT(IN) :: kme
+      INTEGER, INTENT(IN) :: ids ! Start index for i in domain.
+      INTEGER, INTENT(IN) :: ide ! End index for i in domain (staggered grid).
+      INTEGER, INTENT(IN) :: jds ! Start index for j in domain.
+      INTEGER, INTENT(IN) :: jde ! End index for j in domain (staggered grid).
+      INTEGER, INTENT(IN) :: kds ! Start index for k in domain.
+      INTEGER, INTENT(IN) :: kde ! End index for  in domain (staggered grid).
+      INTEGER, INTENT(IN) :: ims ! Start index for i in memory.
+      INTEGER, INTENT(IN) :: ime ! End index for i in memory.
+      INTEGER, INTENT(IN) :: jms ! Start index for j in memory.
+      INTEGER, INTENT(IN) :: jme ! End index for j in memory.
+      INTEGER, INTENT(IN) :: kms ! Start index for k in memory.
+      INTEGER, INTENT(IN) :: kme ! End index for k in memory.
       ! -------------------End Subroutine Parameters Declarations ---------------------------------
 
       ! -------------------- Local variables Declarations -------------------------------------------
@@ -426,7 +485,6 @@ CONTAINS
       INTEGER :: k
 
       REAL, DIMENSION(ims:ime, kms:kme, jms:jme) :: forward_filter
-      REAL, DIMENSION(ims:ime, kms:kme, jms:jme) :: backward_filter
       REAL, DIMENSION(1:3) :: alpha
       REAL :: beta
       REAL :: ai
@@ -441,7 +499,7 @@ CONTAINS
       beta = 3.738128/ai
 
 !$OMP PARALLEL DO SCHEDULE(DYNAMIC) default(shared) &
-!$OMP PRIVATE ( k )
+!$OMP PRIVATE ( k ,j, i)
       DO k = kds, kde
 
          ! Apply gaussian filter in the "x" direction for each j
@@ -467,19 +525,19 @@ CONTAINS
 
             ! Apply backward filter "x" direction
 
-            backward_filter(ide, k, j) = beta*forward_filter(ide, k, j)
+            input_3d(ide, k, j) = beta*forward_filter(ide, k, j)
 
-            backward_filter(ide - 1, k, j) = beta*forward_filter(ide - 1, k, j) + alpha(1)*backward_filter(ide, k, j)
+            input_3d(ide - 1, k, j) = beta*forward_filter(ide - 1, k, j) + alpha(1)*input_3d(ide, k, j)
 
-            backward_filter(ide - 2, k, j) = beta*forward_filter(ide - 2, k, j) + &
-                                             alpha(1)*backward_filter(ide - 1, k, j) + &
-                                             alpha(2)*backward_filter(ide, k, j)
+            input_3d(ide - 2, k, j) = beta*forward_filter(ide - 2, k, j) + &
+                                      alpha(1)*input_3d(ide - 1, k, j) + &
+                                      alpha(2)*input_3d(ide, k, j)
 
             DO i = ide - 3, ids, -1
-               backward_filter(i, k, j) = beta*forward_filter(i, k, j) + &
-                                          alpha(1)*backward_filter(i + 1, k, j) + &
-                                          alpha(2)*backward_filter(i + 2, k, j) + &
-                                          alpha(3)*backward_filter(i + 3, k, j)
+               input_3d(i, k, j) = beta*forward_filter(i, k, j) + &
+                                   alpha(1)*input_3d(i + 1, k, j) + &
+                                   alpha(2)*input_3d(i + 2, k, j) + &
+                                   alpha(3)*input_3d(i + 3, k, j)
             ENDDO
 
          ENDDO
@@ -507,19 +565,19 @@ CONTAINS
 
             ! Apply backward filter "x" direction
 
-            backward_filter(i, k, jde) = beta*forward_filter(i, k, jde)
+            input_3d(i, k, jde) = beta*forward_filter(i, k, jde)
 
-            backward_filter(i, k, jde - 1) = beta*forward_filter(i, k, jde - 1) + alpha(1)*backward_filter(i, k, jde)
+            input_3d(i, k, jde - 1) = beta*forward_filter(i, k, jde - 1) + alpha(1)*input_3d(i, k, jde)
 
-            backward_filter(i, k, jde - 2) = beta*forward_filter(i, k, jde - 2) + &
-                                             alpha(1)*backward_filter(i, k, jde - 1) + &
-                                             alpha(2)*backward_filter(i, k, jde)
+            input_3d(i, k, jde - 2) = beta*forward_filter(i, k, jde - 2) + &
+                                      alpha(1)*input_3d(i, k, jde - 1) + &
+                                      alpha(2)*input_3d(i, k, jde)
 
             DO j = jde - 3, jds, -1
-               backward_filter(i, k, j) = beta*forward_filter(i, k, j) + &
-                                          alpha(1)*backward_filter(i, k, j + 1) + &
-                                          alpha(2)*backward_filter(i, k, j + 2) + &
-                                          alpha(3)*backward_filter(i, k, j + 3)
+               input_3d(i, k, j) = beta*forward_filter(i, k, j) + &
+                                   alpha(1)*input_3d(i, k, j + 1) + &
+                                   alpha(2)*input_3d(i, k, j + 2) + &
+                                   alpha(3)*input_3d(i, k, j + 3)
             ENDDO
 
          ENDDO
@@ -527,11 +585,11 @@ CONTAINS
       ENDDO
 !$OMP END PARALLEL DO
 
-      input_3d = backward_filter ! Improve memory usage!!
+      !input_3d = backward_filter !TODO: Improve memory usage!!
 
    END SUBROUTINE recursive_filter_2d
 
-   SUBROUTINE adjust_humidity(temperature, pressure, qvapor,exner_function, dt, &
+   SUBROUTINE adjust_humidity(temperature, pressure, qvapor, exner_function, dt, &
                               model_latent_heating, latent_heat_tendency, &
                               qvapor_adjustment_tend, &
                               ids, ide, jds, jde, kds, kde, &
@@ -542,37 +600,41 @@ CONTAINS
       IMPLICIT NONE
       !------------------------------ Subroutine Parameters Declarations --------------------------
 
-      REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(IN) :: temperature ![K]
-      REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(IN) :: pressure ![Pa]
-      REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(IN) :: qvapor ![kg/kg]
-      REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(IN) :: exner_function ! dimensionless
+      REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(IN) :: qvapor !Vapor mixing ration [kg/kg].
+      REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(IN) :: pressure ! Total presure [Pa].
+      REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(IN) :: temperature ! Temperature [K].
+      REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(IN) :: exner_function ! Exner function.
 
+      !> Total model latent heating (potential temperature) due to Cumulus and Microphysics parametrizations [K/s].
+      REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(IN) :: model_latent_heating
 
-      REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(IN) :: model_latent_heating ![K/s]
-      REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(IN) :: latent_heat_tendency ![K/s]
-      REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(OUT) :: qvapor_adjustment_tend ![kg/kg/s]
+      !> Latent heat Nudging Tendency for the Potential temperature [K/s].
+      REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(OUT) :: latent_heat_tendency
 
-      REAL, INTENT(IN) :: dt ![s]
+      !> Vapor mixing ratio tendency due to the Latent heat Nudging [Kg/Kg/s].
+      REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(OUT) :: qvapor_adjustment_tend
 
-      INTEGER, INTENT(IN) :: num_tiles
-      INTEGER, DIMENSION(num_tiles), INTENT(IN) :: i_start
-      INTEGER, DIMENSION(num_tiles), INTENT(IN) :: i_end
-      INTEGER, DIMENSION(num_tiles), INTENT(IN) :: j_start
-      INTEGER, DIMENSION(num_tiles), INTENT(IN) :: j_end
-      INTEGER, INTENT(IN) :: kts ! memory patch start in k
-      INTEGER, INTENT(IN) :: kte_unstag ! memory patch end in k
-      INTEGER, INTENT(IN) :: ids
-      INTEGER, INTENT(IN) :: ide
-      INTEGER, INTENT(IN) :: jds
-      INTEGER, INTENT(IN) :: jde
-      INTEGER, INTENT(IN) :: kds
-      INTEGER, INTENT(IN) :: kde
-      INTEGER, INTENT(IN) :: ims
-      INTEGER, INTENT(IN) :: ime
-      INTEGER, INTENT(IN) :: jms
-      INTEGER, INTENT(IN) :: jme
-      INTEGER, INTENT(IN) :: kms
-      INTEGER, INTENT(IN) :: kme
+      REAL, INTENT(IN) :: dt ! Timestep [s].
+
+      INTEGER, INTENT(IN) :: num_tiles ! Number of tiles.
+      INTEGER, DIMENSION(num_tiles), INTENT(IN) :: i_start ! Start index for i in each tile.
+      INTEGER, DIMENSION(num_tiles), INTENT(IN) :: i_end ! End index for i in each tile.
+      INTEGER, DIMENSION(num_tiles), INTENT(IN) :: j_start ! Start index for j in each tile.
+      INTEGER, DIMENSION(num_tiles), INTENT(IN) :: j_end ! End index for j in each tile.
+      INTEGER, INTENT(IN) :: kts ! Memory patch start in z direction
+      INTEGER, INTENT(IN) :: kte_unstag ! Memory patch end in z direction (unstaggered).
+      INTEGER, INTENT(IN) :: ids ! Start index for i in domain.
+      INTEGER, INTENT(IN) :: ide ! End index for i in domain (staggered grid).
+      INTEGER, INTENT(IN) :: jds ! Start index for j in domain.
+      INTEGER, INTENT(IN) :: jde ! End index for j in domain (staggered grid).
+      INTEGER, INTENT(IN) :: kds ! Start index for k in domain.
+      INTEGER, INTENT(IN) :: kde ! End index for  in domain (staggered grid).
+      INTEGER, INTENT(IN) :: ims ! Start index for i in memory.
+      INTEGER, INTENT(IN) :: ime ! End index for i in memory.
+      INTEGER, INTENT(IN) :: jms ! Start index for j in memory.
+      INTEGER, INTENT(IN) :: jme ! End index for j in memory.
+      INTEGER, INTENT(IN) :: kms ! Start index for k in memory.
+      INTEGER, INTENT(IN) :: kme ! End index for k in memory.
 
       !------------------------------ Local Parameters Declarations --------------------------
 
@@ -590,7 +652,7 @@ CONTAINS
       INTEGER :: jte
 
 !$OMP PARALLEL DO SCHEDULE(DYNAMIC) default(shared) &
-!$OMP PRIVATE ( tile ,its,ite,jts,jte, i,j)&
+!$OMP PRIVATE ( tile,its,ite,jts,jte,i,j,k)&
 !$OMP PRIVATE ( newTemperature,newNudgedTemperature,es,model_qvapor_saturation,lhn_qvapor_saturation)
       DO tile = 1, num_tiles
          its = i_start(tile)
@@ -605,10 +667,11 @@ CONTAINS
 
                IF (ABS(latent_heat_tendency(i, k, j)) > no_heating_tolerance) THEN
 
-                  newTemperature = temperature(i, k, j) + model_latent_heating(i, k, j)*exner_function(i,k,j)*dt
+                  newTemperature = temperature(i, k, j) + model_latent_heating(i, k, j)*exner_function(i, k, j)*dt
 
                   newNudgedTemperature = temperature(i, k, j) + &
-                                         (model_latent_heating(i, k, j) + latent_heat_tendency(i, k, j))*exner_function(i,k,j)*dt
+                                         (model_latent_heating(i, k, j) + &
+                                          latent_heat_tendency(i, k, j))*exner_function(i, k, j)*dt
 
                   ! Bolton, 1980 formula
                   es = SVP1_Pa*EXP(SVP2*(newTemperature - SVPT0)/(newTemperature - SVP3))
@@ -616,28 +679,6 @@ CONTAINS
 
                   es = SVP1_Pa*EXP(SVP2*(newNudgedTemperature - SVPT0)/(newNudgedTemperature - SVP3))
                   lhn_qvapor_saturation = EP_2*es/(pressure(i, k, j) - es)
-
-!                  IF (ABS(lhn_qvapor_saturation/model_qvapor_saturation) > 1.01) THEN
-!                    write(*,*)
-!                    write(*,*)
-!                    write(*,*) "temperature", temperature(i, k, j)
-!                    write(*,*) "newTemperature",newTemperature
-!                    write(*,*)
-!                    write(*,*) "TH", temperature(i, k, j)/exner_function(i,k,j)
-!                    write(*,*) "TH_new", (temperature(i, k, j)/exner_function(i,k,j) + model_latent_heating(i, k, j)*dt)
-!                    write(*,*) "Model Heating", model_latent_heating(i, k, j)*dt
-!                    write(*,*) "Model Heating2", model_latent_heating(i, k, j)*exner_function(i,k,j)*dt
-!                    write(*,*)
-!                    write(*,*) "T_new", model_latent_heating(i, k, j)*dt
-!                    write(*,*)
-!                    write(*,*) "newNudgedTemperature",newNudgedTemperature
-!                    write(*,*) "es",es
-!                    write(*,*)
-!                    write(*,*) "lhn_qvapor_saturation",lhn_qvapor_saturation
-!                    write(*,*) "model_qvapor_saturation",model_qvapor_saturation
-!
-!
-!                  ENDIF
 
                   qvapor_adjustment_tend(i, k, j) = qvapor(i, k, j)*(lhn_qvapor_saturation/model_qvapor_saturation - 1.0)/dt
                ELSE
@@ -651,6 +692,5 @@ CONTAINS
 !$OMP END PARALLEL DO
 
    END SUBROUTINE adjust_humidity
-
 
 END MODULE module_latent_heat_nudging

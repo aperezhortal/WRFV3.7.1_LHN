@@ -1429,6 +1429,7 @@ BENCH_END(fdda_driver_tim)
                                   maximum_profile_scaling=config_flags%maximum_profile_scaling, &
                                   lhn_smooth_filter_sigma=config_flags%lhn_smooth_filter_sigma,&
                                   search_range=config_flags%search_range, &
+                                  lhn_limit=config_flags%lhn_limit,&
                                   ids=ids, ide=ide, jds=jds, jde=jde, kds=kds, kde=kde, &
                                   ims=ims, ime=ime, jms=jms, jme=jme, kms=kms, kme=kme, &
                                   num_tiles=grid%num_tiles, &
