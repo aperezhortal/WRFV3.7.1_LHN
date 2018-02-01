@@ -208,7 +208,7 @@ BENCH_END(init_zero_tend_tim)
                         grid%rqishten, grid%rqsshten, grid%rqgshten,     &
                         grid%rthften,  grid%rqvften,                     &
                         grid%RUNDGDTEN, grid%RVNDGDTEN, grid%RTHNDGDTEN, &
-                        grid%RPHNDGDTEN,grid%RQVNDGDTEN, grid%RMUNDGDTEN
+                        grid%RPHNDGDTEN,grid%RQVNDGDTEN, grid%RMUNDGDTEN,&
 !jdf
                         grid%landmask,grid%xland,                 &
 !jdf
