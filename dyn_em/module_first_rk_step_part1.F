@@ -1417,8 +1417,9 @@ BENCH_END(fdda_driver_tim)
                                   raincv=grid%raincv, &
                                   rainshv=grid%rainshv, &
                                   rainncv=grid%rainncv, &
-                                  qvapor=moist(ims,kms,jms,P_QV), pressure=p_phy, &
                                   temperature=t_phy,&
+                                  qvapor=moist(ims,kms,jms,P_QV), pressure=p_phy, &
+                                  exner_function=pi_phy, &
                                   rainrate_observations=grid%rainrate_observations, &
                                   lhn_start=config_flags%lhn_start, &
                                   lhn_end=config_flags%lhn_end, &
