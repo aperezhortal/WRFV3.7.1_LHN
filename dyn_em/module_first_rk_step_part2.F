@@ -263,7 +263,9 @@ BENCH_START(cal_phy_tend)
                      grid%rqvshten,grid%rqcshten,grid%rqrshten,        &
                      grid%rqishten,grid%rqsshten,grid%rqgshten,        &
                      grid%RUNDGDTEN,grid%RVNDGDTEN,grid%RTHNDGDTEN,grid%RQVNDGDTEN, &
-                     grid%RMUNDGDTEN,grid%latent_heat_tendency,        &
+                     grid%RMUNDGDTEN,                                  &
+                     grid%latent_heat_tendency,                        &
+                     grid%qvapor_adjustment_tend,                      &
                      scalar, scalar_tend, num_scalar,                  &
                      tracer, tracer_tend, num_tracer,                  &
                      ids,ide, jds,jde, kds,kde,                        &
@@ -626,6 +628,7 @@ BENCH_START(update_phy_ten_tim)
                            grid%RVNDGDTEN,grid%RTHNDGDTEN,grid%RPHNDGDTEN,  &
                            grid%RQVNDGDTEN,grid%RMUNDGDTEN,                 &
                            grid%latent_heat_tendency, &
+                           grid%qvapor_adjustment_tend, &
                            grid%rthfrten,grid%rqvfrten,                     &  ! fire
                            num_moist,num_scalar,config_flags,rk_step,       &
                            grid%adv_moist_cond,                             &

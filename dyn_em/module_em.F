@@ -1770,7 +1770,8 @@ SUBROUTINE calculate_phy_tend (config_flags,mu,muu,muv,pi3d,           &
                      RQVSHTEN,RQCSHTEN,RQRSHTEN,                       &
                      RQISHTEN,RQSSHTEN,RQGSHTEN,                       &
                      RUNDGDTEN,RVNDGDTEN,RTHNDGDTEN,RQVNDGDTEN,        &
-                     RMUNDGDTEN, latent_heat_tendency,         &
+                     RMUNDGDTEN,                                       &
+                     latent_heat_tendency,qvapor_adjustment_tend,      &
                      scalar, scalar_tend, num_scalar,                  &
                      tracer, tracer_tend, num_tracer,                  &
                      ids,ide, jds,jde, kds,kde,                        &
@@ -1839,7 +1840,8 @@ SUBROUTINE calculate_phy_tend (config_flags,mu,muu,muv,pi3d,           &
                                                               RVNDGDTEN, &
                                                              RTHNDGDTEN, &
                                                              RQVNDGDTEN, &
-                                                             latent_heat_tendency
+                                                             latent_heat_tendency, &
+                                                             qvapor_adjustment_tend
       REAL,     DIMENSION( ims:ime, jms:jme )               , &
                 INTENT(INOUT)   ::                           RMUNDGDTEN
 
@@ -2133,6 +2135,7 @@ SUBROUTINE calculate_phy_tend (config_flags,mu,muu,muv,pi3d,           &
       DO K=kts,ktf
       DO I=its,itf
          latent_heat_tendency(I,K,J)=mu(I,J)*latent_heat_tendency(I,K,J)
+         qvapor_adjustment_tend(I,K,J)=mu(I,J)*qvapor_adjustment_tend(I,K,J)
       ENDDO
       ENDDO
       ENDDO
