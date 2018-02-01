@@ -208,8 +208,7 @@ BENCH_END(init_zero_tend_tim)
                         grid%rqishten, grid%rqsshten, grid%rqgshten,     &
                         grid%rthften,  grid%rqvften,                     &
                         grid%RUNDGDTEN, grid%RVNDGDTEN, grid%RTHNDGDTEN, &
-                        grid%RPHNDGDTEN,grid%RQVNDGDTEN, grid%RMUNDGDTEN,&
-                        grid%latent_heat_tendency, &
+                        grid%RPHNDGDTEN,grid%RQVNDGDTEN, grid%RMUNDGDTEN
 !jdf
                         grid%landmask,grid%xland,                 &
 !jdf
@@ -1409,7 +1408,6 @@ BENCH_END(fdda_driver_tim)
  if (config_flags%lhn_type == 1) then
      CALL wrf_debug ( 200 , ' call latent_heat_nudging_JM97' )
 
-     !pi_phy
 
      CALL latent_heat_nudging_JM97(current_time_in_seconds=int(grid%xtime*60.), &
                                   dt=grid%dt, &
@@ -1419,10 +1417,13 @@ BENCH_END(fdda_driver_tim)
                                   raincv=grid%raincv, &
                                   rainshv=grid%rainshv, &
                                   rainncv=grid%rainncv, &
+                                  qvapor=moist(ims,kms,jms,P_QV), pressure=p_phy, &
+                                  temperature=t_phy,&
                                   rainrate_observations=grid%rainrate_observations, &
                                   lhn_start=config_flags%lhn_start, &
                                   lhn_end=config_flags%lhn_end, &
                                   latent_heat_tendency=grid%latent_heat_tendency, &
+                                  qvapor_adjustment_tend=grid%qvapor_adjustment_tend, &
                                   minimum_profile_scaling=config_flags%minimum_profile_scaling, &
                                   maximum_profile_scaling=config_flags%maximum_profile_scaling, &
                                   lhn_smooth_filter_sigma=config_flags%lhn_smooth_filter_sigma,&

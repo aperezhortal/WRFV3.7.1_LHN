@@ -5136,15 +5136,16 @@ END SUBROUTINE pole_point_bc
 
     ENDIF
 
-    if (config_flags%lhn_type > 0) THEN
-      DO J=j_start,j_end
-      DO K=k_start,k_end
-      DO I=i_start,i_end
-         latent_heat_tendency(I,K,J)=latent_heat_tendency(I,K,J)/mu(I,J)
-      ENDDO
-      ENDDO
-      ENDDO
-    endif
+!    if (config_flags%lhn_type > 0) THEN
+!      DO J=j_start,j_end
+!      DO K=k_start,k_end
+!      DO I=i_start,i_end
+!         latent_heat_tendency(I,K,J)=latent_heat_tendency(I,K,J)/mu(I,J)
+!         qvapor_adjustment_tend(I,K,J)=qvapor_adjustment_tend(I,K,J)/mu(I,J)
+!      ENDDO
+!      ENDDO
+!      ENDDO
+!    endif
 
 
 !  decouple advective forcing required by Grell-Devenyi scheme
