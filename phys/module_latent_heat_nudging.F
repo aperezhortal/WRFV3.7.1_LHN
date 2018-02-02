@@ -1,5 +1,8 @@
 !WRF:MEDIATION_LAYER:PHYSICS
 !
+! Copyright (C) 2018 Andres Perez Hortal, McGill University, Montreal, Canada
+!
+!> This module implements the Latent Heat Nudging scheme for radar data assimilation.
 
 #define PROFILE_CRITERIA_MEET 0
 #define NEARBY_PROFILE_FOUND 1
@@ -8,6 +11,14 @@
 MODULE module_latent_heat_nudging
 
    USE module_model_constants, ONLY:SVP1_Pa, SVP2, SVP3, SVPT0, EP_2
+   ! Saturation vapor pressure constants for Bolton, 1980 formula
+   ! ew[kPa] = 0.6112 exp[ 17.67 * T / (T+243.5) ] ; temperature T in Celsius
+   ! ew[kPa] = SVP1 exp[ SVP2 * ( T - SVPT0) / (T - SVP3) ] ; temperature T in Kelvin
+   ! SVP1_Pa constant for saturation vapor pressure calculation (Pa)
+   ! SVP2 constant for saturation vapor pressure calculation (K)
+   ! SVP3 constant for saturation vapor pressure calculation(K)
+   ! SVPT0 constant for saturation vapor pressure calculation(K)
+   ! EP_2=R_d/R_v constant for specific humidity calculation
 
    IMPLICIT NONE
 
@@ -16,7 +27,7 @@ CONTAINS
    !> Latent Heat Nudging A latent heat nudging scheme for the assimilation of precipitation data.
    !!
    !!  "It is based on latent heat nudging, in which the model profiles of latent heating are scaled by the ratio of observed
-   !!and model precipitation rates. This causes the model to adjust so that the diagnosed precipitation rate
+   !!and mo del precipitation rates. This causes the model to adjust so that the diagnosed precipitation rate
    !! agrees more closely with observations."
    !! Jones, C. D., & Macpherson, B. (1997). A latent heat nudging scheme for the assimilation of precipitation data
    !! into an operational mesoscale model. Meteorological Applications, 4(3), 269-277.
@@ -155,8 +166,8 @@ CONTAINS
 
          ! First compute the model rainrate
 
-!$OMP PARALLEL DO SCHEDULE(DYNAMIC) default(shared) &
-!$OMP PRIVATE ( tile ,its,ite,jts,jte, i,j,k)
+!!$OMP PARALLEL DO SCHEDULE(DYNAMIC) default(shared) &
+!!$OMP PRIVATE ( tile ,its,ite,jts,jte, i,j,k)
          DO tile = 1, num_tiles
             its = i_start(tile)
             ite = i_end(tile)
@@ -174,11 +185,11 @@ CONTAINS
             ENDDO
             ENDDO
          ENDDO
-!$OMP END PARALLEL DO
+!!$OMP END PARALLEL DO
 
          ! Check which model grid points meet the desired criteria
-!$OMP PARALLEL DO SCHEDULE(DYNAMIC) default(shared) &
-!$OMP PRIVATE ( tile ,its,ite,jts,jte, i,j,k,i_profile, j_profile,profile_found)
+!!$OMP PARALLEL DO SCHEDULE(DYNAMIC) default(shared) &
+!!$OMP PRIVATE ( tile ,its,ite,jts,jte, i,j,k,i_profile, j_profile,profile_found)
          DO tile = 1, num_tiles
             its = i_start(tile)
             ite = i_end(tile)
@@ -259,7 +270,7 @@ CONTAINS
             ENDDO
 
          ENDDO
-!$OMP END PARALLEL DO
+!!$OMP END PARALLEL DO
 
          ! Apply the Gaussian smoothing
          IF (lhn_smooth_filter_sigma > 0.0001) THEN
@@ -270,8 +281,11 @@ CONTAINS
          ENDIF
 
          ! Keep the LHN between bounds
-!$OMP PARALLEL DO SCHEDULE(DYNAMIC) default(shared) &
-!$OMP PRIVATE ( tile ,its,ite,jts,jte, i,j,k)
+         ! The lhn_limit is for temperature, not for potential temperature. Hence
+         ! the latent heat tendency is multiplied by the exner function to convert it
+         ! to a temperature tendency
+!!$OMP PARALLEL DO SCHEDULE(DYNAMIC) default(shared) &
+!!$OMP PRIVATE ( tile ,its,ite,jts,jte, i,j,k)
          DO tile = 1, num_tiles
             its = i_start(tile)
             ite = i_end(tile)
@@ -281,19 +295,19 @@ CONTAINS
             DO i = its, ite
             DO j = jts, jte
                DO k = kts, kte_unstag
-                  IF (latent_heat_tendency(i, k, j) > lhn_limit) THEN
-                     latent_heat_tendency(i, k, j) = lhn_limit
+                  IF (latent_heat_tendency(i, k, j)*exner_function(i,k,j) > lhn_limit) THEN
+                     latent_heat_tendency(i, k, j) = lhn_limit/exner_function(i,k,j)
                   ENDIF
 
-                  IF (latent_heat_tendency(i, k, j) < -lhn_limit) THEN
-                     latent_heat_tendency(i, k, j) = -lhn_limit
+                  IF (latent_heat_tendency(i, k, j)*exner_function(i,k,j) < -lhn_limit) THEN
+                     latent_heat_tendency(i, k, j) = -lhn_limit/exner_function(i,k,j)
                   ENDIF
                ENDDO
 
             ENDDO
             ENDDO
          ENDDO
-!$OMP END PARALLEL DO
+!!$OMP END PARALLEL DO
 
          ! Adjust humidity to keep the Relative humidity constant
          CALL adjust_humidity(temperature, pressure, qvapor, exner_function, dt, &
@@ -447,7 +461,7 @@ CONTAINS
 
    END SUBROUTINE spiral_profile_search
 
-   !> 3rd order recursive filer to approximate a 2D convolution with a Gaussian Kernel of a given
+   !> Gaussian Fiilter: 3rd order recursive filer to approximate a 2D convolution with a Gaussian Kernel of a given
    ! standard deviation.
    SUBROUTINE recursive_filter_2d(input_3d, &
                                   sigma_in_gridpoints, &
@@ -484,7 +498,7 @@ CONTAINS
       INTEGER :: j
       INTEGER :: k
 
-      REAL, DIMENSION(ims:ime, kms:kme, jms:jme) :: forward_filter
+      REAL, DIMENSION(ims:ime, kms:kme, jms:jme) :: forward_filter !, backward_filter
       REAL, DIMENSION(1:3) :: alpha
       REAL :: beta
       REAL :: ai
@@ -498,8 +512,8 @@ CONTAINS
 
       beta = 3.738128/ai
 
-!$OMP PARALLEL DO SCHEDULE(DYNAMIC) default(shared) &
-!$OMP PRIVATE ( k ,j, i)
+!!$OMP PARALLEL DO SCHEDULE(DYNAMIC) default(shared) &
+!!$OMP PRIVATE ( k ,j, i)
       DO k = kds, kde
 
          ! Apply gaussian filter in the "x" direction for each j
@@ -583,9 +597,7 @@ CONTAINS
          ENDDO
 
       ENDDO
-!$OMP END PARALLEL DO
-
-      !input_3d = backward_filter !TODO: Improve memory usage!!
+!!$OMP END PARALLEL DO
 
    END SUBROUTINE recursive_filter_2d
 
@@ -621,7 +633,7 @@ CONTAINS
       INTEGER, DIMENSION(num_tiles), INTENT(IN) :: i_end ! End index for i in each tile.
       INTEGER, DIMENSION(num_tiles), INTENT(IN) :: j_start ! Start index for j in each tile.
       INTEGER, DIMENSION(num_tiles), INTENT(IN) :: j_end ! End index for j in each tile.
-      INTEGER, INTENT(IN) :: kts ! Memory patch start in z direction
+      INTEGER, INTENT(IN) :: kts ! Memory patch start in z direction.
       INTEGER, INTENT(IN) :: kte_unstag ! Memory patch end in z direction (unstaggered).
       INTEGER, INTENT(IN) :: ids ! Start index for i in domain.
       INTEGER, INTENT(IN) :: ide ! End index for i in domain (staggered grid).
@@ -638,11 +650,11 @@ CONTAINS
 
       !------------------------------ Local Parameters Declarations --------------------------
 
-      REAL :: newTemperature ! expected temperature at the end of the timestep due to model latent heating
-      REAL :: newNudgedTemperature ! expected temperature at the end of the timestep after nudging
-      REAL :: es
-      REAL :: lhn_qvapor_saturation, model_qvapor_saturation
-
+      REAL :: newTemperature !  Expected temperature at the end of the timestep due to model latent heating.
+      REAL :: newNudgedTemperature ! Expected temperature at the end of the timestep after nudging.
+      REAL :: es ! Saturation vapor pressure
+      REAL :: lhn_qvapor_saturation
+      REAL :: model_qvapor_saturation
       REAL, PARAMETER :: no_heating_tolerance = 1e-10 ![k/s]
 
       INTEGER :: i, j, k, tile
@@ -651,9 +663,9 @@ CONTAINS
       INTEGER :: jts
       INTEGER :: jte
 
-!$OMP PARALLEL DO SCHEDULE(DYNAMIC) default(shared) &
-!$OMP PRIVATE ( tile,its,ite,jts,jte,i,j,k)&
-!$OMP PRIVATE ( newTemperature,newNudgedTemperature,es,model_qvapor_saturation,lhn_qvapor_saturation)
+!!$OMP PARALLEL DO SCHEDULE(DYNAMIC) default(shared) &
+!!$OMP PRIVATE ( tile,its,ite,jts,jte,i,j,k)&
+!!$OMP PRIVATE ( newTemperature,newNudgedTemperature,es,model_qvapor_saturation,lhn_qvapor_saturation)
       DO tile = 1, num_tiles
          its = i_start(tile)
          ite = i_end(tile)
@@ -689,7 +701,7 @@ CONTAINS
          ENDDO
          ENDDO
       ENDDO
-!$OMP END PARALLEL DO
+!!$OMP END PARALLEL DO
 
    END SUBROUTINE adjust_humidity
 
