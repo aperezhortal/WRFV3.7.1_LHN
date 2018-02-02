@@ -4,9 +4,8 @@
 !
 !> This module implements the Latent Heat Nudging scheme for radar data assimilation.
 
-#define PROFILE_CRITERIA_MEET 0
-#define NEARBY_PROFILE_FOUND 1
-#define NO_PROFILE_FOUND 2
+#define NEARBY_PROFILE_FOUND 0
+#define NO_PROFILE_FOUND 1
 
 MODULE module_latent_heat_nudging
 
@@ -21,6 +20,10 @@ MODULE module_latent_heat_nudging
    ! EP_2=R_d/R_v constant for specific humidity calculation
 
    IMPLICIT NONE
+
+   REAL, PARAMETER :: minimum_rainrate = 0.1 ! Minimum rainrate value. Lower values are considered zero [mm/h]
+   REAL, PARAMETER :: rainrate_tolerance = 0.01 ! Rainrate tolerance when comparing wo precipitation values [mm/h]
+   REAL, PARAMETER :: grid_points_tolerance = 0.1 ! Minimum tolerance when comparing grid points
 
 CONTAINS
 
@@ -64,9 +67,9 @@ CONTAINS
       !> Minimum factor to scales the model latent heating profile.
       REAL, INTENT(IN) :: maximum_profile_scaling
 
-      !> Maximum search range in meters where a nearby profile is searched [m].
+      !> Maximum search range in meters where a nearby profile is searched [grid points].
       ! If the range is equal to zero, no profiles are search.
-      REAL, INTENT(IN) :: search_range
+      INTEGER, INTENT(IN) :: search_range
 
       !> Latent heat nudging absolute limit for pot. temperature [K/s]
       REAL, INTENT(IN) :: lhn_limit
@@ -86,7 +89,7 @@ CONTAINS
       REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(IN) :: temperature ! Temperature [K].
       REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(IN) :: exner_function ! Exner function.
 
-      REAL, DIMENSION(ims:ime, jms:jme), INTENT(IN) :: rainrate_observations ! Rainrate observations [mm/hr].
+      REAL, DIMENSION(ims:ime, jms:jme), INTENT(IN) :: rainrate_observations ! Rainrate observations [mm/h].
 
       INTEGER, INTENT(IN) :: lhn_start ! LHN start time from the beggining of the simulation [s].
       INTEGER, INTENT(IN) :: lhn_end ! LHN end time from the beggining of the simulation [s].
@@ -138,24 +141,34 @@ CONTAINS
       INTEGER :: tile
       REAL :: latent_heat_factor
       LOGICAL :: apply_latent_heat_nudging
+      LOGICAL :: noModelPrecipitation
+      LOGICAL :: noObservedPrecipitation
       INTEGER :: max_number_of_grid_points
       INTEGER :: profile_found
       INTEGER :: i_profile
       INTEGER :: j_profile
+      REAL :: min_latent_heat_factor
 
       ! -------------------- End of Local variables Declarations ------------------------------------
 
       apply_latent_heat_nudging = (lhn_start <= current_time_in_seconds) .AND. (current_time_in_seconds <= lhn_end)
 
+      min_latent_heat_factor = minimum_profile_scaling - 1.0
+
       kts = k_start
 
       kte_unstag = min(k_end, kde - 1) ! correspond to the end of the domain in the unstaggered Z dimension!
 
+      ! Initialize the LH and vapor adjustment tendency to zero
+      latent_heat_tendency(:, :, :) = 0.
+
+      qvapor_adjustment_tend(:, :, :) = 0.
+
       ! Just in case that a rounding or trucation error is present
-      IF (search_range > 1.) THEN ! Search range bigger tha 1, otherwise is considered as zero
-         max_number_of_grid_points = (search_range/dx)**2
+      IF (search_range > grid_points_tolerance ) THEN ! Search range bigger than 1, otherwise is considered as zero
+         max_number_of_grid_points = search_range**2
       ELSE
-         max_number_of_grid_points = 0.
+         max_number_of_grid_points = 0
       ENDIF
 
       IF (apply_latent_heat_nudging) THEN
@@ -164,7 +177,7 @@ CONTAINS
 
          write (*, *) "Applying latent heat nudging. t=", current_time_in_seconds, "seconds"
 
-         ! First compute the model rainrate
+         ! First compute the model rainrate and model latent heating
 
 !!$OMP PARALLEL DO SCHEDULE(DYNAMIC) default(shared) &
 !!$OMP PRIVATE ( tile ,its,ite,jts,jte, i,j,k)
@@ -176,7 +189,13 @@ CONTAINS
 
             DO i = its, ite
             DO j = jts, jte
-               model_rainrate(i, j) = (RAINCV(i, j) + RAINSHV(i, j) + RAINNCV(i, j))*3600./dt ! in mm/hr
+
+               model_rainrate(i, j) = (RAINCV(i, j) + RAINSHV(i, j) + RAINNCV(i, j))*3600./dt ! in mm/h
+
+               IF (model_rainrate(i, j) < minimum_rainrate) THEN
+                  model_rainrate(i, j) = 0.
+               ENDIF
+
                DO k = kts, kte_unstag
                   model_latent_heating(i, k, j) = microphysics_latent_heating(i, k, j) + &
                                                   cumulus_latent_heating(i, k, j)
@@ -188,6 +207,7 @@ CONTAINS
 !!$OMP END PARALLEL DO
 
          ! Check which model grid points meet the desired criteria
+
 !!$OMP PARALLEL DO SCHEDULE(DYNAMIC) default(shared) &
 !!$OMP PRIVATE ( tile ,its,ite,jts,jte, i,j,k,i_profile, j_profile,profile_found)
          DO tile = 1, num_tiles
@@ -201,69 +221,78 @@ CONTAINS
 
                !---------------------------------------------------------------------------------------------
                ! Check if the target grid point meet the criteria
-               IF ((model_rainrate(i, j) > 0.001) .AND. & ! Avoid divisions close to zero
-                   (rainrate_observations(i, j) < model_rainrate(i, j)*maximum_profile_scaling) .AND. &
-                   (rainrate_observations(i, j) > model_rainrate(i, j)*minimum_profile_scaling)) THEN
 
-                  profile_found = PROFILE_CRITERIA_MEET
+               noModelPrecipitation = model_rainrate(i, j) < minimum_rainrate
+               noObservedPrecipitation = rainrate_observations(i, j) < minimum_rainrate
 
-               ELSE IF (max_number_of_grid_points > .0) THEN
-                  ! IF criteria is not met, perform an spiral search in the nearby profiles
+               ! If We have no precipitaiton in the model and the observations, or if the observed and the model
+               ! values are similar, leave LHN as zero.
+               ! That is, don't do anything. LHN was already initialized to zero.
 
-                  CALL spiral_profile_search(i, j, max_number_of_grid_points, &
-                                             rainrate_observations, model_rainrate, &
-                                             minimum_profile_scaling, maximum_profile_scaling, &
-                                             ids, ide, jds, jde, &
-                                             ims, ime, jms, jme, &
-                                             i_profile, j_profile, profile_found)
+               IF (noObservedPrecipitation) THEN
+                  ! No observed precipitation treatment
+                  IF (.NOT. noModelPrecipitation) THEN
+                     DO k = kts, kte_unstag
+                        latent_heat_tendency(i, k, j) = model_latent_heating(i, k, j)*min_latent_heat_factor
+                     ENDDO
+
+                  ENDIF
 
                ELSE
+                  ! Some observed precipitation treatment
 
-                  profile_found = NO_PROFILE_FOUND
+                  IF ((.NOT. noModelPrecipitation) .AND. & ! Avoid divisions close to zero
+                      (rainrate_observations(i, j) < model_rainrate(i, j)*maximum_profile_scaling) .AND. &
+                      (rainrate_observations(i, j) > model_rainrate(i, j)*minimum_profile_scaling)) THEN
 
-               ENDIF
-               !---------------------------------------------------------------------------------------------
+                     latent_heat_factor = (rainrate_observations(i, j)/model_rainrate(i, j)) - 1.0
 
-               !---------------------------------------------------------------------------------------------
-               ! Scale the profile according to the criteria that the profiles matches
-               IF (profile_found == PROFILE_CRITERIA_MEET) THEN
-
-                  latent_heat_factor = (rainrate_observations(i, j)/model_rainrate(i, j)) - 1.0
-
-                  DO k = kts, kte_unstag
-                     latent_heat_tendency(i, k, j) = model_latent_heating(i, k, j)*latent_heat_factor
-                  ENDDO
-
-               ELSE IF (profile_found == NEARBY_PROFILE_FOUND) THEN
-                  latent_heat_factor = (rainrate_observations(i, j)/model_rainrate(i_profile, j_profile))
-
-                  DO k = kts, kte_unstag
-                     latent_heat_tendency(i, k, j) = (model_latent_heating(i_profile, k, j_profile)*latent_heat_factor - &
-                                                      model_latent_heating(i, k, j))
-
-                  ENDDO
-
-               ELSE !profile_found == NO_PROFILE_FOUND !TODO: Use climatological profile!
-
-                  IF (abs(rainrate_observations(i, j) - model_rainrate(i, j)) < 0.001) THEN
-                     DO k = kts, kte_unstag
-                        latent_heat_tendency(i, k, j) = 0.
-                     ENDDO
-                  ELSE
-
-                     ! No profile that match the criteria found, search unsuccessful
-                     IF (rainrate_observations(i, j) > model_rainrate(i, j)) THEN
-                        latent_heat_factor = maximum_profile_scaling - 1.
-                     ELSE
-                        latent_heat_factor = minimum_profile_scaling - 1.
-                     ENDIF
-
+                     ! Scale the profile according to the criteria that the profiles matches
                      DO k = kts, kte_unstag
                         latent_heat_tendency(i, k, j) = model_latent_heating(i, k, j)*latent_heat_factor
                      ENDDO
-                  ENDIF
 
+                  ELSE
+                     ! IF criteria is not met, perform an spiral search in the nearby profiles
+
+                     CALL spiral_profile_search(i, j, max_number_of_grid_points, &
+                                                rainrate_observations, model_rainrate, &
+                                                minimum_profile_scaling, maximum_profile_scaling, &
+                                                ids, ide, jds, jde, &
+                                                ims, ime, jms, jme, &
+                                                i_profile, j_profile, profile_found)
+
+                     IF (profile_found == NEARBY_PROFILE_FOUND) THEN
+
+                        latent_heat_factor = (rainrate_observations(i, j)/model_rainrate(i_profile, j_profile))
+
+                        DO k = kts, kte_unstag
+                           latent_heat_tendency(i, k, j) = (model_latent_heating(i_profile, k, j_profile)*latent_heat_factor - &
+                                                            model_latent_heating(i, k, j))
+
+                        ENDDO
+
+                     ELSE
+                        !profile_found == NO_PROFILE_FOUND !TODO: Use climatological profile!
+
+                        ! No profile that match the criteria found, search unsuccessful
+                        IF (rainrate_observations(i, j) > model_rainrate(i, j)) THEN
+                           latent_heat_factor = maximum_profile_scaling - 1.
+                        ELSE
+                           latent_heat_factor = minimum_profile_scaling - 1.
+                        ENDIF
+
+                        DO k = kts, kte_unstag
+                           latent_heat_tendency(i, k, j) = model_latent_heating(i, k, j)*latent_heat_factor
+                        ENDDO
+
+                     ENDIF
+
+                  ENDIF
                ENDIF
+
+               !---------------------------------------------------------------------------------------------
+
                !---------------------------------------------------------------------------------------------
 
             ENDDO
@@ -280,10 +309,10 @@ CONTAINS
                                      ims, ime, jms, jme, kms, kme)
          ENDIF
 
-         ! Keep the LHN between bounds
-         ! The lhn_limit is for temperature, not for potential temperature. Hence
-         ! the latent heat tendency is multiplied by the exner function to convert it
-         ! to a temperature tendency
+         ! Keep the LHN between bounds.The lhn_limit is for temperature increments,
+         ! not for potential temperature. Hence the latent heat tendency is multiplied
+         ! by the exner function to convert into a temperature tendency
+
 !!$OMP PARALLEL DO SCHEDULE(DYNAMIC) default(shared) &
 !!$OMP PRIVATE ( tile ,its,ite,jts,jte, i,j,k)
          DO tile = 1, num_tiles
@@ -294,13 +323,23 @@ CONTAINS
 
             DO i = its, ite
             DO j = jts, jte
+!               DO k = kts, kte_unstag
+!                  IF (latent_heat_tendency(i, k, j)*exner_function(i, k, j) > lhn_limit) THEN
+!                     latent_heat_tendency(i, k, j) = lhn_limit/exner_function(i, k, j)
+!                  ENDIF
+!
+!                  IF (latent_heat_tendency(i, k, j)*exner_function(i, k, j) < -lhn_limit) THEN
+!                     latent_heat_tendency(i, k, j) = -lhn_limit/exner_function(i, k, j)
+!                  ENDIF
+!               ENDDO
+
                DO k = kts, kte_unstag
-                  IF (latent_heat_tendency(i, k, j)*exner_function(i,k,j) > lhn_limit) THEN
-                     latent_heat_tendency(i, k, j) = lhn_limit/exner_function(i,k,j)
+                  IF (latent_heat_tendency(i, k, j) > lhn_limit) THEN
+                     latent_heat_tendency(i, k, j) = lhn_limit
                   ENDIF
 
-                  IF (latent_heat_tendency(i, k, j)*exner_function(i,k,j) < -lhn_limit) THEN
-                     latent_heat_tendency(i, k, j) = -lhn_limit/exner_function(i,k,j)
+                  IF (latent_heat_tendency(i, k, j) < -lhn_limit) THEN
+                     latent_heat_tendency(i, k, j) = -lhn_limit
                   ENDIF
                ENDDO
 
@@ -339,17 +378,12 @@ CONTAINS
          write (*, *) "Min qvapor_adjustment_tend:", MINVAL(qvapor_adjustment_tend(ids:ide, kds:kde, jds:jde))*1000
          write (*, *) "Max qvapor_adjustment_tend:", MAXVAL(qvapor_adjustment_tend(ids:ide, kds:kde, jds:jde))*1000
 
-      ELSE ! Do not apply latent heat nudging
-
-         latent_heat_tendency(:, :, :) = 0.
-         qvapor_adjustment_tend(:, :, :) = 0.
-
       ENDIF
 
    END SUBROUTINE latent_heat_nudging_JM97
 
 !> Algorithm for iterating over an outward spiral on a discrete 2D grid from the origin.
-!
+! The observed precipitation is assument greater than zero!
 ! Adapted from:
 ! https://stackoverflow.com/questions/3706219/algorithm-for-iterating-over-an-outward-spiral-on-a-discrete-2d-grid-from-the-or
    SUBROUTINE spiral_profile_search(i_center, j_center, max_number_of_grid_points, &
@@ -366,8 +400,8 @@ CONTAINS
       INTEGER, INTENT(IN) :: j_center ! j index corresponding to the center of the spiral.
       INTEGER, INTENT(IN) :: max_number_of_grid_points ! Maximum number of points to do the spiral search.
 
-      REAL, DIMENSION(ims:ime, jms:jme), INTENT(IN) :: model_rainrate ! Model Rainrate [mm/hr].
-      REAL, DIMENSION(ims:ime, jms:jme), INTENT(IN) :: rainrate_observations ! Rainrate observations [mm/hr].
+      REAL, DIMENSION(ims:ime, jms:jme), INTENT(IN) :: model_rainrate ! Model Rainrate [mm/h].
+      REAL, DIMENSION(ims:ime, jms:jme), INTENT(IN) :: rainrate_observations ! Rainrate observations [mm/h].
 
       !> Minimum factor to scales the model latent heating profile.
       REAL, INTENT(IN) :: minimum_profile_scaling
@@ -400,6 +434,12 @@ CONTAINS
       INTEGER :: segment_length
 
       ! -------------------- End of Local variables Declarations ------------------------------------
+
+      IF (max_number_of_grid_points < grid_points_tolerance) THEN
+         profile_found = NO_PROFILE_FOUND
+         RETURN
+      ENDIF
+
       di = 1
       dj = 0
       number_of_steps = 1
@@ -431,7 +471,7 @@ CONTAINS
 
          segment_points_visited = segment_points_visited + 1
 
-         if ((model_rainrate(i_profile, j_profile) > 0.001) .AND. & ! Avoid divisions close to zero
+         if ((model_rainrate(i_profile, j_profile) > minimum_rainrate) .AND. & ! Avoid divisions close to zero
              (rainrate_observations(i_center, j_center) < model_rainrate(i_profile, j_profile)*maximum_profile_scaling) .AND. &
              (rainrate_observations(i_center, j_center) > model_rainrate(i_profile, j_profile)*minimum_profile_scaling)) THEN
 
@@ -461,8 +501,8 @@ CONTAINS
 
    END SUBROUTINE spiral_profile_search
 
-   !> Gaussian Fiilter: 3rd order recursive filer to approximate a 2D convolution with a Gaussian Kernel of a given
-   ! standard deviation.
+!> Gaussian Fiilter: 3rd order recursive filer to approximate a 2D convolution with a Gaussian Kernel of a given
+! standard deviation.
    SUBROUTINE recursive_filter_2d(input_3d, &
                                   sigma_in_gridpoints, &
                                   ids, ide, jds, jde, kds, kde, &

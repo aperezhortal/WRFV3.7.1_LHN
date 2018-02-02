@@ -19,7 +19,7 @@ rconfig   integer   lhn_start     namelist,latent_heat_nudging            max_do
 rconfig   integer   lhn_end       namelist,latent_heat_nudging            max_domains    0       rh       "lhn_end"      "Latent heat nudging end time for domain"    "seconds"
 rconfig   real   maximum_profile_scaling  namelist,latent_heat_nudging    max_domains    2.      rh       "maximum_profile_scaling"      "Maximum latent heat profile scaling factor"    ""
 rconfig   real   minimum_profile_scaling  namelist,latent_heat_nudging    max_domains    0.333   rh       "minimum_profile_scaling"      "Minimum latent heat profile scaling factor"    ""
-rconfig   real   search_range     namelist,latent_heat_nudging            max_domains    100     rh       "search_range" "Profiles search range in km"    ""
+rconfig   integer search_range    namelist,latent_heat_nudging            max_domains    10      rh       "search_range" "Profiles search range in grid points"    ""
 rconfig   real   lhn_smooth_filter_sigma   namelist,latent_heat_nudging   max_domains    100     rh       "lhn_smooth_filter_sigma" "LHN horizontal recursive filter standard deviation in grid points"    ""
 rconfig   real   lhn_limit         namelist,latent_heat_nudging           max_domains    0.0005  rh       "lhn_limit" "LHN absolute limit for pot. temperature [K/s]"    ""
 
