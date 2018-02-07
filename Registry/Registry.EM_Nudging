@@ -1,0 +1,43 @@
+# Analysis nudging related variables
+
+# Upscaling and Downscaling from nested domains not supported!
+
+#---------------------------------------------------------------------------------------------------------------------------------------
+# State Variables declarations 
+#<Table>  <Type> <Sym>               <Dims>   <Use>   <NumTLev> <Stagger> <IO>          <DNAME>                <DESCRIP>                <UNITS>
+state    real  U_ANALYSIS        ikj     misc     1         X      i0r   "U_ANALYSIS"               "Analysis U wind"  "m s-1"
+state    real  V_ANALYSIS        ikj     misc     1         Y      i0r   "V_ANALYSIS"               "Analysis V wind from analysis"  "m s-1"
+state    real  T_ANALYSIS        ikj     misc     1         -      i0r   "T_ANALYSIS"               "Analysis Temperature perturbation" "K"
+state    real  Q_ANALYSIS        ikj     misc     1         -      i0r   "Q_ANALYSIS"               "Analysis Vapor Mixing Ratio" "kg/kg"
+state    real  W_ANALYSIS        ikj     misc     1         Z      i0r   "W_ANALYSIS"               "Analysis W wind"  "m s-1"
+state    real  PH_ANALYSIS       ikj     misc     1         Z      i0r   "PH_ANALYSIS"              "Analysis Perturbation Geopotential"  "m2 s-2"
+state    real  MU_ANALYSIS       ij      misc     1         -      i0r   "MU_ANALYSIS"              "Analysis Mass per unit of area (MU)"  "Pa"
+state    real  RWNDGDTEN         ikj     misc     1         Z      r     "RWNDGDTEN"                "COUPLED W WIND TENDENCY DUE TO NUDGING"  "Pa m s-2"
+state    real  NUDGING_MASK      ij      misc     1         -      r     "NUDGING_MASK"             "Analysis Nudging mask" ""
+
+
+
+#---------------------------------------------------------------------------------------------------------------------------------------
+# Variables that are set at run-time to control configuration  (namelist-settable)                                              
+#                                               
+#<Table>  <Type>     <Sym>                   <How set>                   <Nentries>   <Default>   
+rconfig   integer  nudging_type           namelist,analysis_nudging         max_domains    0       rh       "Nudging Type"             ""      ""
+rconfig   integer  analysis_time          namelist,analysis_nudging         max_domains    0       rh       "Analysis time in seconds from the beginning"            ""      ""
+rconfig   real     relaxation_time        namelist,analysis_nudging         max_domains    600.    rh       "Nudging relaxation time [s]"      
+rconfig   logical  nudge_u                namelist,analysis_nudging         max_domains    .false. rh       "Nudge U"
+rconfig   logical  nudge_v                namelist,analysis_nudging         max_domains    .false. rh       "Nudge V"
+rconfig   logical  nudge_w                namelist,analysis_nudging         max_domains    .false. rh       "Nudge W"
+rconfig   logical  nudge_q                namelist,analysis_nudging         max_domains    .false. rh       "Nudge Q"
+rconfig   logical  nudge_t                namelist,analysis_nudging         max_domains    .false. rh       "Nudge T"
+rconfig   logical  nudge_ph               namelist,analysis_nudging         max_domains    .false. rh       "Nudge PH"
+rconfig   logical  nudge_mu               namelist,analysis_nudging         max_domains    .false. rh       "Nudge MU"
+
+
+#---------------------------------------------------------------------------------------------------------------------------------------
+# Package Declarations
+
+#key      package       associated                package          associated 4d scalars
+#         name          namelist choice           state vars
+
+package   analysis_nudging      nudging_type==1     -             state:rundgdten,rvndgdten,RWNDGDTEN,rthndgdten,rqvndgdten,rphndgdten,rmundgdten,U_ANALYSIS,V_ANALYSIS,W_ANALYSIS,T_ANALYSIS,Q_ANALYSIS,PH_ANALYSIS, MU_ANALYSIS
+

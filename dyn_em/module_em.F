@@ -1769,7 +1769,7 @@ SUBROUTINE calculate_phy_tend (config_flags,mu,muu,muv,pi3d,           &
                      RUSHTEN,RVSHTEN,RTHSHTEN,                         &
                      RQVSHTEN,RQCSHTEN,RQRSHTEN,                       &
                      RQISHTEN,RQSSHTEN,RQGSHTEN,                       &
-                     RUNDGDTEN,RVNDGDTEN,RTHNDGDTEN,RQVNDGDTEN,        &
+                     RUNDGDTEN,RVNDGDTEN,RWNDGDTEN,RTHNDGDTEN,RQVNDGDTEN,&
                      RMUNDGDTEN,                                       &
                      latent_heat_tendency,qvapor_adjustment_tend,      &
                      scalar, scalar_tend, num_scalar,                  &
@@ -1838,6 +1838,7 @@ SUBROUTINE calculate_phy_tend (config_flags,mu,muu,muv,pi3d,           &
       REAL,     DIMENSION( ims:ime, kms:kme, jms:jme )               , &
                 INTENT(INOUT)   ::                            RUNDGDTEN, &
                                                               RVNDGDTEN, &
+                                                              RWNDGDTEN, &
                                                              RTHNDGDTEN, &
                                                              RQVNDGDTEN, &
                                                              latent_heat_tendency, &
@@ -2059,23 +2060,16 @@ SUBROUTINE calculate_phy_tend (config_flags,mu,muu,muv,pi3d,           &
 ! note fdda u and v tendencies are staggered, also only interior points have muu/muv,
 !   so only couple those
 
-   IF (config_flags%grid_fdda .gt. 0) THEN
+   IF ( (config_flags%grid_fdda .gt. 0 ) .or. (config_flags%nudging_type .gt. 0) ) THEN
 
       DO J=jts,jtf
       DO K=kts,ktf
       DO I=itsu,itf
-!     if( i == itf/2 .AND. j == jtf/2 .AND. k == ktf/2 ) &
-!     write(*,'(a,3i6,e15.5)') 'u_ten before=',i,k,j, RUNDGDTEN(i,k,j)
          RUNDGDTEN(I,K,J) =muu(I,J)*RUNDGDTEN(I,K,J)
-!        if( i == itf/2 .AND. j == jtf/2 .AND. k==ktf/2 ) &
-!          write(*,'(a,2f15.5)') 'mu, muu=',mu(i,j), muu(i,j)
-!     if( i == itf/2 .AND. j == jtf/2 .AND. k == ktf/2 ) &
-!     write(*,'(a,3i6,e15.5)') 'u_ten after=',i,k,j, RUNDGDTEN(i,k,j)
-!     if( RUNDGDTEN(i,k,j) > 30.0 ) write(*,*) 'IKJ=',i,k,j
       ENDDO
       ENDDO
       ENDDO
-!     write(*,'(a,e15.5)') 'u_ten MAXIMUM after=', maxval(RUNDGDTEN)
+
       DO J=jtsv,jtf
       DO K=kts,ktf
       DO I=its,itf
@@ -2083,15 +2077,19 @@ SUBROUTINE calculate_phy_tend (config_flags,mu,muu,muv,pi3d,           &
       ENDDO
       ENDDO
       ENDDO
+
+      DO J=jtsv,jtf
+      DO K=kts,ktf
+      DO I=its,itf
+         RWNDGDTEN(I,K,J) =mu(I,J)*RWNDGDTEN(I,K,J)
+      ENDDO
+      ENDDO
+      ENDDO
+
       DO J=jts,jtf
       DO K=kts,ktf
       DO I=its,itf
-!     if( i == itf/2 .AND. j == jtf/2 .AND. k == ktf/2 ) &
-!     write(*,'(a,3i6,e15.5)') 'th before=',i,k,j, RTHNDGDTEN(I,K,J)
          RTHNDGDTEN(I,K,J)=mu(I,J)*RTHNDGDTEN(I,K,J)
-!        RMUNDGDTEN(I,J) - no coupling
-!     if( i == itf/2 .AND. j == jtf/2 .AND. k == ktf/2 ) &
-!     write(*,'(a,3i6,e15.5)') 'th after=',i,k,j, RTHNDGDTEN(I,K,J)
       ENDDO
       ENDDO
       ENDDO

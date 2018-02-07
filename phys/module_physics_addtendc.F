@@ -25,7 +25,8 @@ MODULE module_physics_addtendc
 
 CONTAINS
 
-SUBROUTINE update_phy_ten(rph_tendf,rt_tendf,ru_tendf,rv_tendf,moist_tendf, &
+SUBROUTINE update_phy_ten(rph_tendf,rt_tendf,ru_tendf,rv_tendf,rw_tendf, &
+                      moist_tendf, &
                       scalar_tendf,mu_tendf,                                &
                       RTHRATEN,RTHBLTEN,RTHCUTEN,RTHSHTEN,                  &
                       RUBLTEN,RUCUTEN,RUSHTEN,                              &
@@ -35,7 +36,7 @@ SUBROUTINE update_phy_ten(rph_tendf,rt_tendf,ru_tendf,rv_tendf,moist_tendf, &
                       RQCNCUTEN,RQINCUTEN,                                  &
                       RQVSHTEN,RQCSHTEN,RQRSHTEN,RQISHTEN,RQSSHTEN,RQGSHTEN,&
                       RQCNSHTEN,RQINSHTEN,                                  &
-                      RUNDGDTEN,RVNDGDTEN,RTHNDGDTEN,RPHNDGDTEN,            &
+                      RUNDGDTEN,RVNDGDTEN,RWNDGDTEN,RTHNDGDTEN,RPHNDGDTEN,  &
                       RQVNDGDTEN,RMUNDGDTEN,                                &
                       latent_heat_tendency,                                 &
                       qvapor_adjustment_tend,                               &
@@ -60,6 +61,7 @@ SUBROUTINE update_phy_ten(rph_tendf,rt_tendf,ru_tendf,rv_tendf,moist_tendf, &
    REAL , DIMENSION(ims:ime , kms:kme, jms:jme),INTENT(INOUT) ::   &
                                                          ru_tendf, &
                                                          rv_tendf, &
+                                                         rw_tendf, &
                                                          rt_tendf, &
                                                          rph_tendf
 
@@ -106,6 +108,7 @@ SUBROUTINE update_phy_ten(rph_tendf,rt_tendf,ru_tendf,rv_tendf,moist_tendf, &
                                                      RQVNDGDTEN, &
                                                       RUNDGDTEN, &
                                                       RVNDGDTEN, &
+                                                      RWNDGDTEN, &
                                                       latent_heat_tendency, &
                                                       qvapor_adjustment_tend
 
@@ -191,6 +194,19 @@ SUBROUTINE update_phy_ten(rph_tendf,rt_tendf,ru_tendf,rv_tendf,moist_tendf, &
                          ims, ime, jms, jme, kms, kme, &
                          its, ite, jts, jte, kts, kte)
          endif
+
+  endif
+
+
+  if (config_flags%nudging_type .gt. 0) then
+      CALL phy_analysis_nudging_ten(config_flags,rk_step,n_moist, &
+                      rt_tendf,ru_tendf,rv_tendf,rw_tendf,     &
+                      moist_tendf, rph_tendf,mu_tendf,         &
+                      RUNDGDTEN,RVNDGDTEN,RWNDGDTEN,RTHNDGDTEN,&
+                      RQVNDGDTEN,RPHNDGDTEN,RMUNDGDTEN,         &
+                      ids, ide, jds, jde, kds, kde,            &
+                      ims, ime, jms, jme, kms, kme,            &
+                      its, ite, jts, jte, kts, kte             )
 
   endif
 
@@ -1789,6 +1805,105 @@ SUBROUTINE phy_fr_ten(config_flags,rk_step,n_moist,            &
    END SELECT
 
 END SUBROUTINE phy_fr_ten
+
+!=================================================================
+SUBROUTINE phy_analysis_nudging_ten(config_flags,rk_step,n_moist, &
+                      rt_tendf,ru_tendf,rv_tendf,rw_tendf, &
+                      moist_tendf,rph_tendf,mu_tendf,                               &
+                      RUNDGDTEN,RVNDGDTEN,RWNDGDTEN,RTHNDGDTEN,  &
+                      RQVNDGDTEN,RPHNDGDTEN,RMUNDGDTEN,          &
+                      ids, ide, jds, jde, kds, kde,              &
+                      ims, ime, jms, jme, kms, kme,              &
+                      its, ite, jts, jte, kts, kte               )
+!-----------------------------------------------------------------
+   IMPLICIT NONE
+!-----------------------------------------------------------------
+   TYPE(grid_config_rec_type) ,     INTENT(IN   ) :: config_flags
+
+   INTEGER , INTENT(IN)        ::  ids, ide, jds, jde, kds, kde, &
+                                   ims, ime, jms, jme, kms, kme, &
+                                   its, ite, jts, jte, kts, kte, &
+                                   n_moist, rk_step
+
+   REAL , DIMENSION(ims:ime, kms:kme, jms:jme, n_moist),         &
+          INTENT(INOUT)     ::                      moist_tendf
+
+   REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(IN  ) ::   &
+                                                       RTHNDGDTEN, &
+                                                        RUNDGDTEN, &
+                                                        RVNDGDTEN, &
+                                                        RWNDGDTEN, &
+                                                        RQVNDGDTEN,&
+                                                        RPHNDGDTEN
+
+   REAL, DIMENSION(ims:ime, jms:jme), INTENT(IN  ) ::  RMUNDGDTEN
+
+   REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(INOUT)::   &
+                                                       rt_tendf, &
+                                                       ru_tendf, &
+                                                       rv_tendf, &
+                                                       rw_tendf, &
+                                                       rph_tendf
+   REAL, DIMENSION(ims:ime, jms:jme), INTENT(INOUT)::  mu_tendf
+
+
+
+
+! LOCAL VARS
+
+   INTEGER :: i,j,k,IBGN,IEND,JBGN,JEND
+
+! write(*,*) 'Adding tendencies'
+!-----------------------------------------------------------------
+
+         CALL add_a2a(rt_tendf,RTHNDGDTEN,config_flags,        &
+               ids,ide, jds, jde, kds, kde,                     &
+               ims, ime, jms, jme, kms, kme,                    &
+               its, ite, jts, jte, kts, kte                     )
+
+         CALL add_a2a_ph(rw_tendf,RWNDGDTEN,config_flags,        &
+               ids,ide, jds, jde, kds, kde,                     &
+               ims, ime, jms, jme, kms, kme,                    &
+               its, ite, jts, jte, kts, kte                     )
+
+         CALL add_a2a_ph(rph_tendf,RPHNDGDTEN,config_flags,     &
+               ids,ide, jds, jde, kds, kde,                     &
+               ims, ime, jms, jme, kms, kme,                    &
+               its, ite, jts, jte, kts, kte                     )
+
+
+         ! note nudging u and v tendencies are staggered
+           CALL add_c2c_u(ru_tendf,RUNDGDTEN,config_flags,       &
+                ids,ide, jds, jde, kds, kde,                     &
+                ims, ime, jms, jme, kms, kme,                    &
+                its, ite, jts, jte, kts, kte                     )
+
+           CALL add_c2c_v(rv_tendf,RVNDGDTEN,config_flags,       &
+                ids,ide, jds, jde, kds, kde,                     &
+                ims, ime, jms, jme, kms, kme,                    &
+                its, ite, jts, jte, kts, kte                     )
+
+          CALL add_a2a(rt_tendf,RTHNDGDTEN,config_flags,        &
+                ids,ide, jds, jde, kds, kde,                     &
+                ims, ime, jms, jme, kms, kme,                    &
+                its, ite, jts, jte, kts, kte                     )
+
+          CALL add_a2a(mu_tendf,RMUNDGDTEN,config_flags,      &
+                ids,ide, jds, jde, kds, kds,                     &
+                ims, ime, jms, jme, kms, kms,                    &
+                its, ite, jts, jte, kts, kts                     )
+
+
+        if (P_QV .ge. PARAM_FIRST_SCALAR) THEN
+           CALL add_a2a(moist_tendf(ims,kms,jms,P_QV),RQVNDGDTEN,  &
+                config_flags,                                    &
+                ids,ide, jds, jde, kds, kde,                     &
+                ims, ime, jms, jme, kms, kme,                    &
+                its, ite, jts, jte, kts, kte                     )
+        endif
+
+
+END SUBROUTINE phy_analysis_nudging_ten
 
 !----------------------------------------------------------------------
 SUBROUTINE advance_ppt(RTHCUTEN,RQVCUTEN,RQCCUTEN,RQRCUTEN,           &

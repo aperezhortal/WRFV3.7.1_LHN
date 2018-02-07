@@ -44,6 +44,7 @@ CONTAINS
     USE module_pbl_driver, ONLY : pbl_driver
     USE module_fr_fire_driver_wrf, ONLY : fire_driver_em_step
     USE module_fddagd_driver, ONLY : fddagd_driver
+    USE module_analysis_nudging, ONLY : nudge_towards_analysis
     USE module_em, ONLY : init_zero_tendency
     USE module_force_scm
     USE module_convtrans_prep
@@ -207,7 +208,8 @@ BENCH_END(init_zero_tend_tim)
                         grid%rqvshten, grid%rqcshten, grid%rqrshten,     &
                         grid%rqishten, grid%rqsshten, grid%rqgshten,     &
                         grid%rthften,  grid%rqvften,                     &
-                        grid%RUNDGDTEN, grid%RVNDGDTEN, grid%RTHNDGDTEN, &
+                        grid%RUNDGDTEN, grid%RVNDGDTEN, grid%RWNDGDTEN,  &
+                        grid%RTHNDGDTEN, &
                         grid%RPHNDGDTEN,grid%RQVNDGDTEN, grid%RMUNDGDTEN,&
 !jdf
                         grid%landmask,grid%xland,                 &
@@ -1404,6 +1406,42 @@ BENCH_START(fdda_driver_tim)
                    ,IPSY=ipsy,IPEY=ipey,JPSY=jpsy,JPEY=jpey,KPSY=kpsy,KPEY=kpey     )
 
 BENCH_END(fdda_driver_tim)
+
+  if (config_flags%nudging_type .gt. 0) then
+
+      CALL nudge_towards_analysis( itimestep=grid%itimestep,dt=grid%dt,xtime=grid%XTIME,      &
+                                   analysis_time=config_flags%analysis_time, &
+                                   relaxation_time=config_flags%relaxation_time,  &
+                                   nudge_u=config_flags%nudge_u,  &
+                                   nudge_v=config_flags%nudge_v,  &
+                                   nudge_w=config_flags%nudge_w,  &
+                                   nudge_q=config_flags%nudge_q,  &
+                                   nudge_t=config_flags%nudge_t,  &
+                                   nudge_ph=config_flags%nudge_ph,  &
+                                   nudge_mu=config_flags%nudge_mu,  &
+                                   U_ANALYSIS=grid%u_analysis,    &
+                                   V_ANALYSIS=grid%v_analysis,    &
+                                   W_ANALYSIS=grid%w_analysis,    &
+                                   T_ANALYSIS=grid%t_analysis,    &
+                                   Q_ANALYSIS=grid%q_analysis,    &
+                                   PH_ANALYSIS=grid%ph_analysis,    &
+                                   MU_ANALYSIS=grid%mu_analysis,    &
+                                   nudging_mask=grid%nudging_mask,    &
+                                   u_staggered=grid%u_2,v_staggered=grid%v_2, w_staggered=grid%w_2, &
+                                   qvapor=moist(ims,kms,jms,P_QV), temperature=th_phy,ph_staggered=grid%ph_2,mu=grid%mut, &
+                                   RUNDGDTEN=grid%rundgdten,RVNDGDTEN=grid%rvndgdten,RWNDGDTEN=grid%rwndgdten,  &
+                                   RTHNDGDTEN=grid%rthndgdten, &
+                                   RQVNDGDTEN=grid%RQVNDGDTEN, &
+                                   RPHNDGDTEN=grid%RPHNDGDTEN, &
+                                   RMUNDGDTEN=grid%RMUNDGDTEN, &
+                                   ids=ids,ide=ide, jds=jds,jde=jde, kds=kds,kde=kde,   &
+                                   ims=ims,ime=ime, jms=jms,jme=jme, kms=kms,kme=kme,                           &
+                                   I_START=grid%i_start,I_END=min(grid%i_end, ide-1),               &
+                                   J_START=grid%j_start,J_END=min(grid%j_end, jde-1),               &
+                                   KTS=k_start, KTE=min(k_end,kde-1),num_tiles=grid%num_tiles    )
+
+  endif
+
 
  if (config_flags%lhn_type == 1) then
      CALL wrf_debug ( 200 , ' call latent_heat_nudging_JM97' )

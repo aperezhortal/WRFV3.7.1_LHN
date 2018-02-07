@@ -262,7 +262,8 @@ BENCH_START(cal_phy_tend)
                      grid%rushten,grid%rvshten,grid%rthshten,          &
                      grid%rqvshten,grid%rqcshten,grid%rqrshten,        &
                      grid%rqishten,grid%rqsshten,grid%rqgshten,        &
-                     grid%RUNDGDTEN,grid%RVNDGDTEN,grid%RTHNDGDTEN,grid%RQVNDGDTEN, &
+                     grid%RUNDGDTEN,grid%RVNDGDTEN,grid%RWNDGDTEN, &
+                     grid%RTHNDGDTEN,grid%RQVNDGDTEN, &
                      grid%RMUNDGDTEN,                                  &
                      grid%latent_heat_tendency,                        &
                      grid%qvapor_adjustment_tend,                      &
@@ -611,7 +612,8 @@ BENCH_START(update_phy_ten_tim)
 
 
 
-         CALL update_phy_ten(ph_tendf,t_tendf, ru_tendf, rv_tendf,moist_tend ,&
+         CALL update_phy_ten(ph_tendf,t_tendf, ru_tendf, rv_tendf, &
+                           rw_tendf, moist_tend ,&
                            scalar_tend, mu_tendf,                           &
                            grid%rthraten,grid%rthblten,grid%rthcuten,grid%rthshten, &
                            grid%rublten,grid%rucuten,grid%rushten,          &
@@ -625,7 +627,8 @@ BENCH_START(update_phy_ten_tim)
                            grid%rqishten,grid%rqsshten,grid%rqgshten,       &
                            grid%rqcnshten,grid%rqinshten,                   &!BSINGH - Added two SHCU tends
                            grid%RUNDGDTEN,                                  &
-                           grid%RVNDGDTEN,grid%RTHNDGDTEN,grid%RPHNDGDTEN,  &
+                           grid%RVNDGDTEN,grid%RWNDGDTEN,                   &
+                           grid%RTHNDGDTEN,grid%RPHNDGDTEN,                 &
                            grid%RQVNDGDTEN,grid%RMUNDGDTEN,                 &
                            grid%latent_heat_tendency, &
                            grid%qvapor_adjustment_tend, &

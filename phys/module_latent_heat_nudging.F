@@ -165,7 +165,7 @@ CONTAINS
       qvapor_adjustment_tend(:, :, :) = 0.
 
       ! Just in case that a rounding or trucation error is present
-      IF (search_range > grid_points_tolerance ) THEN ! Search range bigger than 1, otherwise is considered as zero
+      IF (search_range > grid_points_tolerance) THEN ! Search range bigger than 1, otherwise is considered as zero
          max_number_of_grid_points = search_range**2
       ELSE
          max_number_of_grid_points = 0
@@ -206,7 +206,8 @@ CONTAINS
          ENDDO
 !!$OMP END PARALLEL DO
 
-         ! Check which model grid points meet the desired criteria
+         !
+         write (*, *) "Check which model grid points meet the desired criteria"
 
 !!$OMP PARALLEL DO SCHEDULE(DYNAMIC) default(shared) &
 !!$OMP PRIVATE ( tile ,its,ite,jts,jte, i,j,k,i_profile, j_profile,profile_found)
@@ -538,7 +539,7 @@ CONTAINS
       INTEGER :: j
       INTEGER :: k
 
-      REAL, DIMENSION(ims:ime, kms:kme, jms:jme) :: forward_filter !, backward_filter
+      REAL, DIMENSION(ims:ime, kms:kme, jms:jme) ::         forward_filter !, backward_filter
       REAL, DIMENSION(1:3) :: alpha
       REAL :: beta
       REAL :: ai

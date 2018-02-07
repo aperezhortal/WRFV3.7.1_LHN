@@ -164,10 +164,11 @@ MODULES = \
 	module_fdda_psufddagd.o \
 	module_fdda_spnudging.o \
 	module_fddagd_driver.o  \
-        module_fddaobs_rtfdda.o \
+    module_fddaobs_rtfdda.o \
+    module_analysis_nudging.o \
 	module_fddaobs_driver.o \
 	module_wind_fitch.o \
-        module_sf_lake.o \
+    module_sf_lake.o \
 	module_diagnostics_driver.o
 
 FIRE_MODULES = \

@@ -4667,7 +4667,8 @@ END SUBROUTINE pole_point_bc
                          RQVSHTEN, RQCSHTEN, RQRSHTEN,                &
                          RQISHTEN, RQSSHTEN, RQGSHTEN,                &
                          RTHFTEN,  RQVFTEN,                           &
-                         RUNDGDTEN, RVNDGDTEN, RTHNDGDTEN,            &
+                         RUNDGDTEN, RVNDGDTEN, RWNDGDTEN, RTHNDGDTEN, &
+
                          RPHNDGDTEN,RQVNDGDTEN, RMUNDGDTEN,           &
 !jdf
                          landmask, xland,                             &
@@ -4765,6 +4766,7 @@ END SUBROUTINE pole_point_bc
    REAL,  DIMENSION( ims:ime, kms:kme, jms:jme )                   , &
           INTENT(INOUT)   ::                                RUNDGDTEN, &
                                                             RVNDGDTEN, &
+                                                            RWNDGDTEN, &
                                                            RTHNDGDTEN, &
                                                            RPHNDGDTEN, &
                                                            RQVNDGDTEN
@@ -5170,8 +5172,7 @@ END SUBROUTINE pole_point_bc
 ! note fdda u and v tendencies are staggered, also only interior points have muu/muv,
 !   so only decouple those
 
-   IF (config_flags%grid_fdda .gt. 0) THEN
-
+    IF ( (config_flags%grid_fdda .gt. 0 ) .or. (config_flags%nudging_type .gt. 0) ) THEN
       i_startu=MAX(its,ids+1)
       j_startv=MAX(jts,jds+1)
 
@@ -5189,6 +5190,26 @@ END SUBROUTINE pole_point_bc
       ENDDO
       ENDDO
       ENDDO
+
+      IF ( (config_flags%nudging_type .gt. 0) .or. (config_flags%grid_fdda .EQ. 2) )THEN
+          DO J=j_start,j_end
+          DO K=k_start,kte
+          DO I=i_start,i_end
+             RPHNDGDTEN(I,K,J)=RPHNDGDTEN(I,K,J)/mu(I,J)
+          ENDDO
+          ENDDO
+          ENDDO
+      ENDIF
+
+      IF (config_flags%nudging_type .gt. 0)  THEN
+      DO J=j_start,j_end
+      DO K=k_start,k_end+1
+      DO I=i_start,i_end
+         RWNDGDTEN(I,K,J) = RWNDGDTEN(I,K,J)/mu(I,J)
+      ENDDO
+      ENDDO
+      ENDDO
+      ENDIF
       DO J=j_start,j_end
       DO K=k_start,k_end
       DO I=i_start,i_end
@@ -5207,7 +5228,7 @@ END SUBROUTINE pole_point_bc
       ENDDO
       ENDDO
 
-      ELSE IF (config_flags%grid_fdda .EQ. 1) THEN
+      ELSE IF ( (config_flags%grid_fdda .EQ. 1) .or. (config_flags%nudging_type .gt. 0) )THEN
       IF (P_QV .ge. PARAM_FIRST_SCALAR) THEN
          DO J=j_start,j_end
          DO K=k_start,k_end
