@@ -6,6 +6,7 @@
 # State Variables declarations 
 #<Table>  <Type> <Sym>               <Dims>   <Use>   <NumTLev> <Stagger> <IO>          <DNAME>                <DESCRIP>                <UNITS>
 state     real  rainrate_observations ij     misc        1         -     i6   "RAINRATE_OBSERVATIONS"    "Surface rainrate observations" "mm/hr"
+state     real  observations_quality  ij     misc        1         -     i6   "OBSERVATIONS_QUALITY"     "Observations quality index"     ""
 state     real  latent_heat_tendency  ikj    misc        1         -     h    "latent_heat_tendency" "Latent Heat Tendency"              "K/s"
 state     real  qvapor_adjustment_tend  ikj  misc        1         -     h    "qvapor_adjustment_tend" "Humidity adjustment tendency"    "kg/kg/s"
 

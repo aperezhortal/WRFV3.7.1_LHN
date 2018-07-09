@@ -1459,6 +1459,7 @@ BENCH_END(fdda_driver_tim)
                                   qvapor=moist(ims,kms,jms,P_QV), pressure=p_phy, &
                                   exner_function=pi_phy, &
                                   rainrate_observations=grid%rainrate_observations, &
+                                  observations_quality=grid%observations_quality,&
                                   lhn_start=config_flags%lhn_start, &
                                   lhn_end=config_flags%lhn_end, &
                                   latent_heat_tendency=grid%latent_heat_tendency, &

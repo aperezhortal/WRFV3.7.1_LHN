@@ -42,6 +42,7 @@ CONTAINS
                                        qvapor, pressure, &
                                        exner_function, &
                                        rainrate_observations, &
+                                       observations_quality, &
                                        lhn_start, lhn_end, &
                                        latent_heat_tendency, qvapor_adjustment_tend, &
                                        minimum_profile_scaling, maximum_profile_scaling, &
@@ -90,6 +91,7 @@ CONTAINS
       REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(IN) :: exner_function ! Exner function.
 
       REAL, DIMENSION(ims:ime, jms:jme), INTENT(IN) :: rainrate_observations ! Rainrate observations [mm/h].
+      REAL, DIMENSION(ims:ime, jms:jme), INTENT(IN) :: observations_quality ! Observations quality index
 
       INTEGER, INTENT(IN) :: lhn_start ! LHN start time from the beggining of the simulation [s].
       INTEGER, INTENT(IN) :: lhn_end ! LHN end time from the beggining of the simulation [s].
@@ -173,8 +175,10 @@ CONTAINS
 
       IF (apply_latent_heat_nudging) THEN
 
+         ! Initialize
          model_latent_heating(:, :, :) = 0.
 
+         ! TODO: Use WRF debug print
          write (*, *) "Applying latent heat nudging. t=", current_time_in_seconds, "seconds"
 
          ! First compute the model rainrate and model latent heating
@@ -206,7 +210,6 @@ CONTAINS
          ENDDO
 !!$OMP END PARALLEL DO
 
-         !
          write (*, *) "Check which model grid points meet the desired criteria"
 
 !!$OMP PARALLEL DO SCHEDULE(DYNAMIC) default(shared) &
@@ -220,78 +223,84 @@ CONTAINS
             DO i = its, ite
             DO j = jts, jte
 
-               !---------------------------------------------------------------------------------------------
-               ! Check if the target grid point meet the criteria
+               IF (observations_quality(i, j) > 0.) THEN
+                  ! Do something only when observations quality is greater than 0
+                  ! This means that we have valid observations in that grid point.
 
-               noModelPrecipitation = model_rainrate(i, j) < minimum_rainrate
-               noObservedPrecipitation = rainrate_observations(i, j) < minimum_rainrate
+                  !---------------------------------------------------------------------------------------------
+                  ! Check if the target grid point meet the criteria
 
-               ! If We have no precipitaiton in the model and the observations, or if the observed and the model
-               ! values are similar, leave LHN as zero.
-               ! That is, don't do anything. LHN was already initialized to zero.
+                  noModelPrecipitation = model_rainrate(i, j) < minimum_rainrate
 
-               IF (noObservedPrecipitation) THEN
-                  ! No observed precipitation treatment
-                  IF (.NOT. noModelPrecipitation) THEN
-                     DO k = kts, kte_unstag
-                        latent_heat_tendency(i, k, j) = model_latent_heating(i, k, j)*min_latent_heat_factor
-                     ENDDO
+                  noObservedPrecipitation = rainrate_observations(i, j) < minimum_rainrate
 
-                  ENDIF
+                  ! If We have no precipitation in the model and the observations, or if the observed and the model
+                  ! values are similar, leave LHN as zero.
+                  ! That is, don't do anything. LHN was already initialized to zero.
 
-               ELSE
-                  ! Some observed precipitation treatment
-
-                  IF ((.NOT. noModelPrecipitation) .AND. & ! Avoid divisions close to zero
-                      (rainrate_observations(i, j) < model_rainrate(i, j)*maximum_profile_scaling) .AND. &
-                      (rainrate_observations(i, j) > model_rainrate(i, j)*minimum_profile_scaling)) THEN
-
-                     latent_heat_factor = (rainrate_observations(i, j)/model_rainrate(i, j)) - 1.0
-
-                     ! Scale the profile according to the criteria that the profiles matches
-                     DO k = kts, kte_unstag
-                        latent_heat_tendency(i, k, j) = model_latent_heating(i, k, j)*latent_heat_factor
-                     ENDDO
-
-                  ELSE
-                     ! IF criteria is not met, perform an spiral search in the nearby profiles
-
-                     CALL spiral_profile_search(i, j, max_number_of_grid_points, &
-                                                rainrate_observations, model_rainrate, &
-                                                minimum_profile_scaling, maximum_profile_scaling, &
-                                                ids, ide, jds, jde, &
-                                                ims, ime, jms, jme, &
-                                                i_profile, j_profile, profile_found)
-
-                     IF (profile_found == NEARBY_PROFILE_FOUND) THEN
-
-                        latent_heat_factor = (rainrate_observations(i, j)/model_rainrate(i_profile, j_profile))
-
+                  IF (noObservedPrecipitation) THEN
+                     ! No observed precipitation treatment
+                     IF (.NOT. noModelPrecipitation) THEN
                         DO k = kts, kte_unstag
-                           latent_heat_tendency(i, k, j) = (model_latent_heating(i_profile, k, j_profile)*latent_heat_factor - &
-                                                            model_latent_heating(i, k, j))
-
-                        ENDDO
-
-                     ELSE
-                        !profile_found == NO_PROFILE_FOUND !TODO: Use climatological profile!
-
-                        ! No profile that match the criteria found, search unsuccessful
-                        IF (rainrate_observations(i, j) > model_rainrate(i, j)) THEN
-                           latent_heat_factor = maximum_profile_scaling - 1.
-                        ELSE
-                           latent_heat_factor = minimum_profile_scaling - 1.
-                        ENDIF
-
-                        DO k = kts, kte_unstag
-                           latent_heat_tendency(i, k, j) = model_latent_heating(i, k, j)*latent_heat_factor
+                           latent_heat_tendency(i, k, j) = model_latent_heating(i, k, j)*min_latent_heat_factor
                         ENDDO
 
                      ENDIF
 
-                  ENDIF
-               ENDIF
+                  ELSE
+                     ! Some observed precipitation treatment
 
+                     IF ((.NOT. noModelPrecipitation) .AND. & ! Avoid divisions close to zero
+                         (rainrate_observations(i, j) < model_rainrate(i, j)*maximum_profile_scaling) .AND. &
+                         (rainrate_observations(i, j) > model_rainrate(i, j)*minimum_profile_scaling)) THEN
+
+                        latent_heat_factor = (rainrate_observations(i, j)/model_rainrate(i, j)) - 1.0
+
+                        ! Scale the profile according to the criteria that the profiles matches
+                        DO k = kts, kte_unstag
+                           latent_heat_tendency(i, k, j) = model_latent_heating(i, k, j)*latent_heat_factor
+                        ENDDO
+
+                     ELSE
+                        ! IF criteria is not met, perform an spiral search in the nearby profiles
+
+                        CALL spiral_profile_search(i, j, max_number_of_grid_points, &
+                                                   rainrate_observations, model_rainrate, &
+                                                   minimum_profile_scaling, maximum_profile_scaling, &
+                                                   ids, ide, jds, jde, &
+                                                   ims, ime, jms, jme, &
+                                                   i_profile, j_profile, profile_found)
+
+                        IF (profile_found == NEARBY_PROFILE_FOUND) THEN
+
+                           latent_heat_factor = (rainrate_observations(i, j)/model_rainrate(i_profile, j_profile))
+
+                           DO k = kts, kte_unstag
+                              latent_heat_tendency(i, k, j) = (model_latent_heating(i_profile, k, j_profile)*latent_heat_factor - &
+                                                               model_latent_heating(i, k, j))
+
+                           ENDDO
+
+                        ELSE
+                           !profile_found == NO_PROFILE_FOUND !TODO: Use climatological profile!
+
+                           ! No profile that match the criteria found, search unsuccessful
+                           IF (rainrate_observations(i, j) > model_rainrate(i, j)) THEN
+                              latent_heat_factor = maximum_profile_scaling - 1.
+                           ELSE
+                              latent_heat_factor = minimum_profile_scaling - 1.
+                           ENDIF
+
+                           DO k = kts, kte_unstag
+                              latent_heat_tendency(i, k, j) = model_latent_heating(i, k, j)*latent_heat_factor
+                           ENDDO
+
+                        ENDIF
+
+                     ENDIF
+                  ENDIF
+
+               ENDIF
                !---------------------------------------------------------------------------------------------
 
                !---------------------------------------------------------------------------------------------
