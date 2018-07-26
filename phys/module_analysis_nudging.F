@@ -153,6 +153,8 @@ CONTAINS
       IF (currenttimeinseconds .GE. nudgingstarttimeinseconds .AND. &
           currenttimeinseconds .LT. nudgingendtimeinseconds) THEN
 
+          WRITE (*,*) 'Apllying nudging. currentTimeInSeconds :', currenttimeinseconds
+
 !$OMP PARALLEL DO &
 !$OMP PRIVATE ( ij,i,j,k )
          DO ij = 1, num_tiles
@@ -269,8 +271,7 @@ CONTAINS
 
       ENDIF
 
-      IF (.TRUE.) THEN
-          WRITE (*,*) 'Apllying nudging. currentTimeInSeconds :', currenttimeinseconds
+!      IF (.TRUE.) THEN
 !         WRITE (6, '(A,F15.2)') ' currentTimeInSeconds :', currenttimeinseconds
 !         WRITE (6, '(A,F15.2)') ' nudgingStartTimeInSeconds :', nudgingstarttimeinseconds
 !         WRITE (6, '(A,F15.2)') ' nudgingEndTimeInSeconds :', nudgingendtimeinseconds
@@ -286,7 +287,7 @@ CONTAINS
 !         WRITE (6, '(A,F15.5)') ' Q_ANALYSIS(50,4,50) :', q_ANALYSIS(50, 4, 50)
 !         WRITE (6, '(A,F15.5)') ' Q_Vapor(50,4,50) :', qvapor(50, 4, 50)
 !         WRITE (6, '(A,F15.5)') ' RQVNDGDTEN(50,4,50) :', RQVNDGDTEN(50, 4, 50)
-      ENDIF
+!      ENDIF
 
    END SUBROUTINE nudge_towards_analysis
 
