@@ -10,19 +10,22 @@ state     real  observations_quality  ij     misc        1         -     i6   "O
 state     real  latent_heat_tendency  ikj    misc        1         -     h    "latent_heat_tendency" "Latent Heat Tendency"              "K/s"
 state     real  qvapor_adjustment_tend  ikj  misc        1         -     h    "qvapor_adjustment_tend" "Humidity adjustment tendency"    "kg/kg/s"
 
+state     real  local_lhn_factor       ij    misc        1         -     h    "local_lhn_factor" "Local Latent heat nudgin factor"    ""
+
 
 #---------------------------------------------------------------------------------------------------------------------------------------
 # Variables that are set at run-time to control configuration  (namelist-settable)                                              
 #                                               
 #<Table>  <Type>     <Sym>                   <How set>                   <Nentries>   <Default>   
-rconfig   integer   lhn_type      namelist,latent_heat_nudging            max_domains    0       rh       "lhn"          "Latent heat nudging type"                   ""
-rconfig   integer   lhn_start     namelist,latent_heat_nudging            max_domains    0       rh       "lhn_start"    "Latent heat nudging start time for domain"  "seconds"
-rconfig   integer   lhn_end       namelist,latent_heat_nudging            max_domains    0       rh       "lhn_end"      "Latent heat nudging end time for domain"    "seconds"
-rconfig   real   maximum_profile_scaling  namelist,latent_heat_nudging    max_domains    2.      rh       "maximum_profile_scaling"      "Maximum latent heat profile scaling factor"    ""
-rconfig   real   minimum_profile_scaling  namelist,latent_heat_nudging    max_domains    0.333   rh       "minimum_profile_scaling"      "Minimum latent heat profile scaling factor"    ""
-rconfig   integer search_range    namelist,latent_heat_nudging            max_domains    10      rh       "search_range" "Profiles search range in grid points"    ""
-rconfig   real   lhn_smooth_filter_sigma   namelist,latent_heat_nudging   max_domains    100     rh       "lhn_smooth_filter_sigma" "LHN horizontal recursive filter standard deviation in grid points"    ""
-rconfig   real   lhn_limit         namelist,latent_heat_nudging           max_domains    0.0005  rh       "lhn_limit" "LHN absolute limit for pot. temperature [K/s]"    ""
+rconfig   integer   lhn_type      namelist,latent_heat_nudging            max_domains    0        rh       "lhn"          "Latent heat nudging type"                   ""
+rconfig   integer   lhn_start     namelist,latent_heat_nudging            max_domains    0        rh       "lhn_start"    "Latent heat nudging start time for domain"  "seconds"
+rconfig   integer   lhn_end       namelist,latent_heat_nudging            max_domains    0        rh       "lhn_end"      "Latent heat nudging end time for domain"    "seconds"
+rconfig   real   maximum_profile_scaling  namelist,latent_heat_nudging    max_domains    2.       rh       "maximum_profile_scaling"      "Maximum latent heat profile scaling factor"    ""
+rconfig   real   minimum_profile_scaling  namelist,latent_heat_nudging    max_domains    0.333    rh       "minimum_profile_scaling"      "Minimum latent heat profile scaling factor"    ""
+rconfig   integer search_range    namelist,latent_heat_nudging            max_domains    10       rh       "search_range" "Profiles search range in grid points"    ""
+rconfig   real   lhn_smooth_filter_sigma   namelist,latent_heat_nudging   max_domains    1.       rh       "lhn_smooth_filter_sigma" "LHN horizontal recursive filter standard deviation in grid points"    ""
+rconfig   logical  lhn_filter_precipitation namelist,latent_heat_nudging  max_domains    .false.  rh       "lhn_filter_precipitation" "Apply horizontal recursive filter also to preocipitation fields"    ""
+rconfig   real   lhn_limit         namelist,latent_heat_nudging           max_domains    0.0005   rh       "lhn_limit" "LHN absolute limit for pot. temperature [K/s]"    ""
 
 #---------------------------------------------------------------------------------------------------------------------------------------
 # Package Declarations

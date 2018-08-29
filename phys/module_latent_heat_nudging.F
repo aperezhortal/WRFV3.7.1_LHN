@@ -45,9 +45,11 @@ CONTAINS
                                        observations_quality, &
                                        lhn_start, lhn_end, &
                                        latent_heat_tendency, qvapor_adjustment_tend, &
+                                       local_lhn_factor, &
                                        minimum_profile_scaling, maximum_profile_scaling, &
                                        search_range, &
                                        lhn_smooth_filter_sigma, &
+                                       filter_precipitation, &
                                        lhn_limit, &
                                        ids, ide, jds, jde, kds, kde, &
                                        ims, ime, jms, jme, kms, kme, &
@@ -74,6 +76,9 @@ CONTAINS
 
       !> Latent heat nudging absolute limit for pot. temperature [K/s]
       REAL, INTENT(IN) :: lhn_limit
+
+      !> Also apply the gaussian filter to the preicpitation fields
+      LOGICAL, INTENT(IN) :: filter_precipitation
 
       !> Latent heating tendency (Potential temperature) due to the microphysics scheme [K/s].
       REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(IN) :: microphysics_latent_heating
@@ -106,6 +111,8 @@ CONTAINS
       !> Vapor mixing ratio tendency due to the Latent heat Nudging [Kg/Kg/s].
       REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(OUT) :: qvapor_adjustment_tend
 
+      REAL, DIMENSION(ims:ime, jms:jme), INTENT(OUT) :: local_lhn_factor
+
       INTEGER, INTENT(IN) :: ids ! Start index for i in domain.
       INTEGER, INTENT(IN) :: ide ! End index for i in domain (staggered grid).
       INTEGER, INTENT(IN) :: jds ! Start index for j in domain.
@@ -130,7 +137,9 @@ CONTAINS
 
       ! -------------------- Local variables Declarations -------------------------------------------
       REAL, DIMENSION(ims:ime, jms:jme) :: model_rainrate
+      REAL, DIMENSION(ims:ime, jms:jme) :: smooth_observed_rainrate
       REAL, DIMENSION(ims:ime, kms:kme, jms:jme) :: model_latent_heating !(K/s)
+      REAL, DIMENSION(ims:ime, jms:jme) :: debug_vars !(K/s)
       INTEGER :: i
       INTEGER :: j
       INTEGER :: k
@@ -163,8 +172,8 @@ CONTAINS
 
       ! Initialize the LH and vapor adjustment tendency to zero
       latent_heat_tendency(:, :, :) = 0.
-
       qvapor_adjustment_tend(:, :, :) = 0.
+      local_lhn_factor(:, :) = 0
 
       ! Just in case that a rounding or trucation error is present
       IF (search_range > grid_points_tolerance) THEN ! Search range bigger than 1, otherwise is considered as zero
@@ -177,6 +186,8 @@ CONTAINS
 
          ! Initialize
          model_latent_heating(:, :, :) = 0.
+         smooth_observed_rainrate(:, :) = 0.
+         model_rainrate(:, :) = 0.
 
          ! TODO: Use WRF debug print
          write (*, *) "Applying latent heat nudging. t=", current_time_in_seconds, "seconds"
@@ -194,10 +205,14 @@ CONTAINS
             DO i = its, ite
             DO j = jts, jte
 
-               model_rainrate(i, j) = (RAINCV(i, j) + RAINSHV(i, j) + RAINNCV(i, j))*3600./dt ! in mm/h
+               model_rainrate(i, j) = (RAINCV(i, j) + RAINSHV(i, j) + RAINNCV(i, j))*3600./dt
 
                IF (model_rainrate(i, j) < minimum_rainrate) THEN
                   model_rainrate(i, j) = 0.
+               ENDIF
+
+               IF (rainrate_observations(i, j) >= minimum_rainrate) THEN
+                  smooth_observed_rainrate(i, j) = rainrate_observations(i, j)
                ENDIF
 
                DO k = kts, kte_unstag
@@ -208,7 +223,22 @@ CONTAINS
             ENDDO
             ENDDO
          ENDDO
+
 !!$OMP END PARALLEL DO
+
+         IF ((filter_precipitation) .AND. (lhn_smooth_filter_sigma > 0.0001)) THEN
+
+            CALL recursive_filter_2d(model_rainrate, &
+                                     lhn_smooth_filter_sigma, &
+                                     ids, ide, jds, jde, &
+                                     ims, ime, jms, jme)
+
+            CALL recursive_filter_2d(smooth_observed_rainrate, &
+                                     lhn_smooth_filter_sigma, &
+                                     ids, ide, jds, jde, &
+                                     ims, ime, jms, jme)
+
+         ENDIF
 
          write (*, *) "Check which model grid points meet the desired criteria"
 
@@ -224,6 +254,7 @@ CONTAINS
             DO j = jts, jte
 
                IF (observations_quality(i, j) > 0.) THEN
+
                   ! Do something only when observations quality is greater than 0
                   ! This means that we have valid observations in that grid point.
 
@@ -232,7 +263,7 @@ CONTAINS
 
                   noModelPrecipitation = model_rainrate(i, j) < minimum_rainrate
 
-                  noObservedPrecipitation = rainrate_observations(i, j) < minimum_rainrate
+                  noObservedPrecipitation = smooth_observed_rainrate(i, j) < minimum_rainrate
 
                   ! If We have no precipitation in the model and the observations, or if the observed and the model
                   ! values are similar, leave LHN as zero.
@@ -240,32 +271,43 @@ CONTAINS
 
                   IF (noObservedPrecipitation) THEN
                      ! No observed precipitation treatment
-                     IF (.NOT. noModelPrecipitation) THEN
+                     IF (noModelPrecipitation) THEN
+                        CYCLE
+                     ELSE
+                        local_lhn_factor(i, j) = min_latent_heat_factor
                         DO k = kts, kte_unstag
-                           latent_heat_tendency(i, k, j) = model_latent_heating(i, k, j)*min_latent_heat_factor
+                           IF (model_latent_heating(i, k, j) > 0.) THEN
+                              latent_heat_tendency(i, k, j) = model_latent_heating(i, k, j)*min_latent_heat_factor
+                           ENDIF
                         ENDDO
 
                      ENDIF
 
                   ELSE
+
                      ! Some observed precipitation treatment
+                     IF (.NOT. noModelPrecipitation) THEN
+                        local_lhn_factor(i, j) = (smooth_observed_rainrate(i, j)/model_rainrate(i, j)) - 1.0
+                     ENDIF
 
                      IF ((.NOT. noModelPrecipitation) .AND. & ! Avoid divisions close to zero
-                         (rainrate_observations(i, j) < model_rainrate(i, j)*maximum_profile_scaling) .AND. &
-                         (rainrate_observations(i, j) > model_rainrate(i, j)*minimum_profile_scaling)) THEN
+                         (smooth_observed_rainrate(i, j) < model_rainrate(i, j)*maximum_profile_scaling) .AND. &
+                         (smooth_observed_rainrate(i, j) > model_rainrate(i, j)*minimum_profile_scaling)) THEN
 
-                        latent_heat_factor = (rainrate_observations(i, j)/model_rainrate(i, j)) - 1.0
+                        latent_heat_factor = (smooth_observed_rainrate(i, j)/model_rainrate(i, j)) - 1.0
 
                         ! Scale the profile according to the criteria that the profiles matches
                         DO k = kts, kte_unstag
-                           latent_heat_tendency(i, k, j) = model_latent_heating(i, k, j)*latent_heat_factor
+                           IF (model_latent_heating(i, k, j) > 0.) THEN
+                              latent_heat_tendency(i, k, j) = model_latent_heating(i, k, j)*latent_heat_factor
+                           ENDIF
                         ENDDO
 
                      ELSE
                         ! IF criteria is not met, perform an spiral search in the nearby profiles
 
                         CALL spiral_profile_search(i, j, max_number_of_grid_points, &
-                                                   rainrate_observations, model_rainrate, &
+                                                   smooth_observed_rainrate, model_rainrate, &
                                                    minimum_profile_scaling, maximum_profile_scaling, &
                                                    ids, ide, jds, jde, &
                                                    ims, ime, jms, jme, &
@@ -273,26 +315,32 @@ CONTAINS
 
                         IF (profile_found == NEARBY_PROFILE_FOUND) THEN
 
-                           latent_heat_factor = (rainrate_observations(i, j)/model_rainrate(i_profile, j_profile))
+                           latent_heat_factor = (smooth_observed_rainrate(i, j)/model_rainrate(i_profile, j_profile))
 
                            DO k = kts, kte_unstag
-                              latent_heat_tendency(i, k, j) = (model_latent_heating(i_profile, k, j_profile)*latent_heat_factor - &
-                                                               model_latent_heating(i, k, j))
+                              if (model_latent_heating(i_profile, k, j_profile) > 0.) THEN
+                                 latent_heat_tendency(i, k, j) = &
+                                    (model_latent_heating(i_profile, k, j_profile)*latent_heat_factor - &
+                                     model_latent_heating(i, k, j))
+                              ENDIF
 
                            ENDDO
 
                         ELSE
+
                            !profile_found == NO_PROFILE_FOUND !TODO: Use climatological profile!
 
                            ! No profile that match the criteria found, search unsuccessful
-                           IF (rainrate_observations(i, j) > model_rainrate(i, j)) THEN
+                           IF (smooth_observed_rainrate(i, j) > model_rainrate(i, j)) THEN
                               latent_heat_factor = maximum_profile_scaling - 1.
                            ELSE
                               latent_heat_factor = minimum_profile_scaling - 1.
                            ENDIF
 
                            DO k = kts, kte_unstag
-                              latent_heat_tendency(i, k, j) = model_latent_heating(i, k, j)*latent_heat_factor
+                               IF (model_latent_heating(i, k, j) > 0.) THEN
+                                  latent_heat_tendency(i, k, j) = model_latent_heating(i, k, j)*latent_heat_factor
+                               ENDIF
                            ENDDO
 
                         ENDIF
@@ -313,7 +361,7 @@ CONTAINS
 
          ! Apply the Gaussian smoothing
          IF (lhn_smooth_filter_sigma > 0.0001) THEN
-            CALL recursive_filter_2d(latent_heat_tendency, &
+            CALL recursive_filter_3d(latent_heat_tendency, &
                                      lhn_smooth_filter_sigma, &
                                      ids, ide, jds, jde, kds, kde, &
                                      ims, ime, jms, jme, kms, kme)
@@ -370,20 +418,27 @@ CONTAINS
          write (*, *)
          write (*, *) "minimum_profile_scaling", minimum_profile_scaling
          write (*, *) "maximum_profile_scaling", maximum_profile_scaling
+         write (*, *) "lhn_limit", lhn_limit
          write (*, *)
-         write (*, *) "Min latent_heat_tendency:", MINVAL(latent_heat_tendency(ids:ide, kds:kde, jds:jde))
-         write (*, *) "Min cumulus_latent_heating CU:", MINVAL(cumulus_latent_heating(ids:ide, kds:kde, jds:jde))
-         write (*, *) "Min microphysics_latent_heating CU:", MINVAL(microphysics_latent_heating(ids:ide, kds:kde, jds:jde))
+         write (*, *) "debug_vars", MINVAL(debug_vars(ids:ide - 1, jds:jde - 1)), &
+            MAXVAL(debug_vars(ids:ide - 1, jds:jde - 1))
+         write (*, *) "quality", MINVAL(observations_quality(ids:ide - 1, jds:jde - 1)), &
+            MAXVAL(observations_quality(ids:ide - 1, jds:jde - 1))
+
          write (*, *)
-         write (*, *) "Max latent_heat_tendency:", MAXVAL(latent_heat_tendency(ids:ide, kds:kde, jds:jde))
-         write (*, *) "Max cumulus_latent_heating CU:", MAXVAL(cumulus_latent_heating(ids:ide, kds:kde, jds:jde))
-         write (*, *) "Max microphysics_latent_heating CU:", MAXVAL(microphysics_latent_heating(ids:ide, kds:kde, jds:jde))
+         write (*, *) "latent_heat_tendency:", MINVAL(latent_heat_tendency(ids:ide, kds:kde, jds:jde)), &
+            MAXVAL(latent_heat_tendency(ids:ide, kds:kde, jds:jde))
+         write (*, *) "cumulus_latent_heating CU:", MINVAL(cumulus_latent_heating(ids:ide, kds:kde, jds:jde)), &
+            MAXVAL(cumulus_latent_heating(ids:ide, kds:kde, jds:jde))
+         write (*, *) "microphysics_latent_heating CU:", MINVAL(microphysics_latent_heating(ids:ide, kds:kde, jds:jde)), &
+            MAXVAL(microphysics_latent_heating(ids:ide, kds:kde, jds:jde))
          write (*, *)
-         write (*, *) "Min model_rainrate:", MINVAL(model_rainrate(ids:ide - 1, jds:jde - 1))
-         write (*, *) "Min rainrate_observations:", MINVAL(rainrate_observations(ids:ide - 1, jds:jde - 1))
          write (*, *)
-         write (*, *) "Max model_rainrate:", MAXVAL(model_rainrate(ids:ide - 1, jds:jde - 1))
-         write (*, *) "Max rainrate_observations:", MAXVAL(rainrate_observations(ids:ide - 1, jds:jde - 1))
+         write (*, *) "model_rainrate:", MINVAL(model_rainrate(ids:ide - 1, jds:jde - 1)), &
+            MAXVAL(model_rainrate(ids:ide - 1, jds:jde - 1))
+         write (*, *) "rainrate_observations:", MINVAL(smooth_observed_rainrate(ids:ide - 1, jds:jde - 1)), &
+            MAXVAL(smooth_observed_rainrate(ids:ide - 1, jds:jde - 1))
+         write (*, *)
          write (*, *)
          write (*, *) "Min qvapor_adjustment_tend:", MINVAL(qvapor_adjustment_tend(ids:ide, kds:kde, jds:jde))*1000
          write (*, *) "Max qvapor_adjustment_tend:", MAXVAL(qvapor_adjustment_tend(ids:ide, kds:kde, jds:jde))*1000
@@ -513,7 +568,135 @@ CONTAINS
 
 !> Gaussian Fiilter: 3rd order recursive filer to approximate a 2D convolution with a Gaussian Kernel of a given
 ! standard deviation.
-   SUBROUTINE recursive_filter_2d(input_3d, &
+   SUBROUTINE recursive_filter_2d(input_2d, &
+                                  sigma_in_gridpoints, &
+                                  ids, ide, jds, jde, &
+                                  ims, ime, jms, jme)
+
+      IMPLICIT NONE
+
+      !------------------------------ Subroutine Parameters Declarations --------------------------
+
+      !> Input field to convolve with a Gaussian Kernel
+      REAL, DIMENSION(ims:ime, jms:jme), INTENT(INOUT) :: input_2d
+
+      !> Standard deviation of the gaussian filter in the horizontal dimension [grid points].
+      ! If sigma = 0 no filter is applied.
+      REAL, INTENT(IN) :: sigma_in_gridpoints
+
+      INTEGER, INTENT(IN) :: ids ! Start index for i in domain.
+      INTEGER, INTENT(IN) :: ide ! End index for i in domain (staggered grid).
+      INTEGER, INTENT(IN) :: jds ! Start index for j in domain.
+      INTEGER, INTENT(IN) :: jde ! End index for j in domain (staggered grid).
+      INTEGER, INTENT(IN) :: ims ! Start index for i in memory.
+      INTEGER, INTENT(IN) :: ime ! End index for i in memory.
+      INTEGER, INTENT(IN) :: jms ! Start index for j in memory.
+      INTEGER, INTENT(IN) :: jme ! End index for j in memory.
+      ! -------------------End Subroutine Parameters Declarations ---------------------------------
+
+      ! -------------------- Local variables Declarations -------------------------------------------
+      INTEGER :: i
+      INTEGER :: j
+
+      REAL, DIMENSION(ims:ime, jms:jme) ::forward_filter !, backward_filter
+      REAL, DIMENSION(1:3) :: alpha
+      REAL :: beta
+      REAL :: ai
+      ! -------------------- End of Local variables Declarations ------------------------------------
+
+      ai = 3.738128+5.788982*sigma_in_gridpoints + 3.382473*sigma_in_gridpoints**2 + sigma_in_gridpoints**3
+
+      alpha(1) = (5.788982*sigma_in_gridpoints + 6.764946*(sigma_in_gridpoints**2) + 3*(sigma_in_gridpoints**3))/ai
+      alpha(2) = -(3.382473*(sigma_in_gridpoints**2) + 3*(sigma_in_gridpoints**3))/ai
+      alpha(3) = (sigma_in_gridpoints**3)/ai
+
+      beta = 3.738128/ai
+
+      ! Apply gaussian filter in the "x" direction for each j
+      DO j = jds, jde
+
+         ! Apply forward filter
+
+         forward_filter(ids, j) = beta*input_2d(ids, j)
+
+         forward_filter(ids + 1, j) = beta*input_2d(ids + 1, j) + alpha(1)*forward_filter(ids, j)
+
+         forward_filter(ids + 2, j) = beta*input_2d(ids + 2, j) + &
+                                      alpha(1)*forward_filter(ids + 1, j) + &
+                                      alpha(2)*forward_filter(ids, j)
+
+         DO i = ids + 3, ide
+
+            forward_filter(i, j) = beta*input_2d(i, j) + &
+                                   alpha(1)*forward_filter(i - 1, j) + &
+                                   alpha(2)*forward_filter(i - 2, j) + &
+                                   alpha(3)*forward_filter(i - 3, j)
+         ENDDO
+
+         ! Apply backward filter "x" direction
+
+         input_2d(ide, j) = beta*forward_filter(ide, j)
+
+         input_2d(ide - 1, j) = beta*forward_filter(ide - 1, j) + alpha(1)*input_2d(ide, j)
+
+         input_2d(ide - 2, j) = beta*forward_filter(ide - 2, j) + &
+                                alpha(1)*input_2d(ide - 1, j) + &
+                                alpha(2)*input_2d(ide, j)
+
+         DO i = ide - 3, ids, -1
+            input_2d(i, j) = beta*forward_filter(i, j) + &
+                             alpha(1)*input_2d(i + 1, j) + &
+                             alpha(2)*input_2d(i + 2, j) + &
+                             alpha(3)*input_2d(i + 3, j)
+         ENDDO
+
+      ENDDO
+
+      ! Apply gaussian filter in the "y" direction for each i
+      DO i = ids, ide
+
+         ! Apply forward filter
+
+         forward_filter(i, jds) = beta*input_2d(i, jds)
+
+         forward_filter(i, jds + 1) = beta*input_2d(i, jds + 1) + alpha(1)*forward_filter(i, jds)
+
+         forward_filter(i, jds + 1) = beta*input_2d(i, jds + 2) + &
+                                      alpha(1)*forward_filter(i, jds + 1) + &
+                                      alpha(2)*forward_filter(i, jds)
+
+         DO j = jds + 3, jde
+
+            forward_filter(i, j) = beta*input_2d(i, j) + &
+                                   alpha(1)*forward_filter(i, j - 1) + &
+                                   alpha(2)*forward_filter(i, j - 2) + &
+                                   alpha(3)*forward_filter(i, j - 3)
+         ENDDO
+
+         ! Apply backward filter "x" direction
+
+         input_2d(i, jde) = beta*forward_filter(i, jde)
+
+         input_2d(i, jde - 1) = beta*forward_filter(i, jde - 1) + alpha(1)*input_2d(i, jde)
+
+         input_2d(i, jde - 2) = beta*forward_filter(i, jde - 2) + &
+                                alpha(1)*input_2d(i, jde - 1) + &
+                                alpha(2)*input_2d(i, jde)
+
+         DO j = jde - 3, jds, -1
+            input_2d(i, j) = beta*forward_filter(i, j) + &
+                             alpha(1)*input_2d(i, j + 1) + &
+                             alpha(2)*input_2d(i, j + 2) + &
+                             alpha(3)*input_2d(i, j + 3)
+         ENDDO
+
+      ENDDO
+
+   END SUBROUTINE recursive_filter_2d
+
+!> Gaussian Fiilter: 3rd order recursive filer to approximate a 2D convolution with a Gaussian Kernel of a given
+! standard deviation.
+   SUBROUTINE recursive_filter_3d(input_3d, &
                                   sigma_in_gridpoints, &
                                   ids, ide, jds, jde, kds, kde, &
                                   ims, ime, jms, jme, kms, kme)
@@ -649,7 +832,7 @@ CONTAINS
       ENDDO
 !!$OMP END PARALLEL DO
 
-   END SUBROUTINE recursive_filter_2d
+   END SUBROUTINE recursive_filter_3d
 
    SUBROUTINE adjust_humidity(temperature, pressure, qvapor, exner_function, dt, &
                               model_latent_heating, latent_heat_tendency, &

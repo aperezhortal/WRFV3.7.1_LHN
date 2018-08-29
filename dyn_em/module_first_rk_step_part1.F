@@ -1464,9 +1464,11 @@ BENCH_END(fdda_driver_tim)
                                   lhn_end=config_flags%lhn_end, &
                                   latent_heat_tendency=grid%latent_heat_tendency, &
                                   qvapor_adjustment_tend=grid%qvapor_adjustment_tend, &
+                                  local_lhn_factor=grid%local_lhn_factor,&
                                   minimum_profile_scaling=config_flags%minimum_profile_scaling, &
                                   maximum_profile_scaling=config_flags%maximum_profile_scaling, &
                                   lhn_smooth_filter_sigma=config_flags%lhn_smooth_filter_sigma,&
+                                  filter_precipitation=config_flags%lhn_filter_precipitation, &
                                   search_range=config_flags%search_range, &
                                   lhn_limit=config_flags%lhn_limit,&
                                   ids=ids, ide=ide, jds=jds, jde=jde, kds=kds, kde=kde, &

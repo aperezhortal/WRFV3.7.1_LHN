@@ -271,23 +271,16 @@ CONTAINS
 
       ENDIF
 
-!      IF (.TRUE.) THEN
-!         WRITE (6, '(A,F15.2)') ' currentTimeInSeconds :', currenttimeinseconds
-!         WRITE (6, '(A,F15.2)') ' nudgingStartTimeInSeconds :', nudgingstarttimeinseconds
-!         WRITE (6, '(A,F15.2)') ' nudgingEndTimeInSeconds :', nudgingendtimeinseconds
-!         WRITE (6, '(A,I15)') ' analysis_time :', analysis_time
-!         WRITE (6, '(A,F15.2)') ' itimestep*dt :', itimestep*dt
-!         WRITE (6, '(A,F15.2)') ' xtime :', xtime
-!         WRITE (6, '(A,F15.2)') ' nudgingRelaxation :', relaxation_time
-!         WRITE (6, '(A,F15.2)') ' dt :', dt
-!         WRITE (6, '(A,I15.2)') ' kts :', kts
-!         WRITE (6, '(A,I15.2)') ' kte :', kte
-!         WRITE (6, '(A,I15.2)') ' kds :', kds
-!         WRITE (6, '(A,I15.2)') ' kde :', kde
-!         WRITE (6, '(A,F15.5)') ' Q_ANALYSIS(50,4,50) :', q_ANALYSIS(50, 4, 50)
-!         WRITE (6, '(A,F15.5)') ' Q_Vapor(50,4,50) :', qvapor(50, 4, 50)
-!         WRITE (6, '(A,F15.5)') ' RQVNDGDTEN(50,4,50) :', RQVNDGDTEN(50, 4, 50)
-!      ENDIF
+      IF (.TRUE.) THEN
+         WRITE (6, '(A,F15.2)') ' currentTimeInSeconds :', currenttimeinseconds
+         WRITE (6, '(A,F15.2)') ' nudgingStartTimeInSeconds :', nudgingstarttimeinseconds
+         WRITE (6, '(A,F15.2)') ' nudgingEndTimeInSeconds :', nudgingendtimeinseconds
+         WRITE (6, '(A,I15)') ' analysis_time :', analysis_time
+         WRITE (6, '(A,F15.2)') ' itimestep*dt :', itimestep*dt
+         WRITE (6, '(A,F15.2)') ' xtime :', xtime
+         WRITE (6, '(A,F15.2)') ' nudgingRelaxation :', relaxation_time
+         WRITE (6, '(A,F15.2)') ' dt :', dt
+      ENDIF
 
    END SUBROUTINE nudge_towards_analysis
 
