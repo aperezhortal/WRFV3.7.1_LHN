@@ -6,6 +6,7 @@
 
 #define NEARBY_PROFILE_FOUND 0
 #define NO_PROFILE_FOUND 1
+#define NO_PROFILE_SEARCHED 2
 
 MODULE module_latent_heat_nudging
 
@@ -159,12 +160,14 @@ CONTAINS
       INTEGER :: i_profile
       INTEGER :: j_profile
       REAL :: min_latent_heat_factor
+      REAL :: max_latent_heat_factor
 
       ! -------------------- End of Local variables Declarations ------------------------------------
 
       apply_latent_heat_nudging = (lhn_start <= current_time_in_seconds) .AND. (current_time_in_seconds <= lhn_end)
 
       min_latent_heat_factor = minimum_profile_scaling - 1.0
+      max_latent_heat_factor = maximum_profile_scaling - 1.0
 
       kts = k_start
 
@@ -283,29 +286,71 @@ CONTAINS
 
                      ENDIF
 
-                  ELSE
+                  ELSE ! Observed precipitation
 
                      ! Some observed precipitation treatment
                      IF (.NOT. noModelPrecipitation) THEN
                         local_lhn_factor(i, j) = (smooth_observed_rainrate(i, j)/model_rainrate(i, j)) - 1.0
                      ENDIF
 
-                     IF ((.NOT. noModelPrecipitation) .AND. & ! Avoid divisions close to zero
-                         (smooth_observed_rainrate(i, j) < model_rainrate(i, j)*maximum_profile_scaling) .AND. &
-                         (smooth_observed_rainrate(i, j) > model_rainrate(i, j)*minimum_profile_scaling)) THEN
+                     IF (.NOT. noModelPrecipitation) THEN ! There is precip in the model
 
                         latent_heat_factor = (smooth_observed_rainrate(i, j)/model_rainrate(i, j)) - 1.0
 
-                        ! Scale the profile according to the criteria that the profiles matches
-                        DO k = kts, kte_unstag
-                           IF (model_latent_heating(i, k, j) > 0.) THEN
-                              latent_heat_tendency(i, k, j) = model_latent_heating(i, k, j)*latent_heat_factor
+                        IF (latent_heat_factor > max_latent_heat_factor) THEN
+                           ! Perform an spiral search in the nearby profiles
+
+                           CALL spiral_profile_search(i, j, max_number_of_grid_points, &
+                                                      smooth_observed_rainrate, model_rainrate, &
+                                                      minimum_profile_scaling, maximum_profile_scaling, &
+                                                      ids, ide, jds, jde, &
+                                                      ims, ime, jms, jme, &
+                                                      i_profile, j_profile, profile_found)
+
+                           IF (profile_found == NEARBY_PROFILE_FOUND) THEN
+
+                              latent_heat_factor = smooth_observed_rainrate(i, j)/model_rainrate(i_profile, j_profile)
+
+                              DO k = kts, kte_unstag
+                                 IF (model_latent_heating(i_profile, k, j_profile) > 0.) THEN
+                                    latent_heat_tendency(i, k, j) = &
+                                       model_latent_heating(i_profile, k, j_profile)*latent_heat_factor &
+                                       - model_latent_heating(i, k, j)
+                                 ENDIF
+
+!                                 IF (model_latent_heating(i, k, j) > 0) THEN
+!                                    latent_heat_tendency(i, k, j) = latent_heat_tendency(i, k, j) - &
+!                                                                    model_latent_heating(i, k, j)
+!                                 ENDIF
+
+                              ENDDO
+
+                           ELSE ! profile not found
+
+                              latent_heat_factor = max_latent_heat_factor
+
+                              DO k = kts, kte_unstag
+                                 IF (model_latent_heating(i, k, j) > 0.) THEN
+                                    latent_heat_tendency(i, k, j) = model_latent_heating(i, k, j)*latent_heat_factor
+                                 ENDIF
+                              ENDDO
+
                            ENDIF
-                        ENDDO
 
-                     ELSE
-                        ! IF criteria is not met, perform an spiral search in the nearby profiles
+                        ELSE ! (latent_heat_factor <= max_latent_heat_factor)
+                           IF (latent_heat_factor < min_latent_heat_factor) THEN
+                              latent_heat_factor = min_latent_heat_factor
+                           ENDIF
 
+                           DO k = kts, kte_unstag
+                              IF (model_latent_heating(i, k, j) > 0.) THEN
+                                 latent_heat_tendency(i, k, j) = model_latent_heating(i, k, j)*latent_heat_factor
+                              ENDIF
+                           ENDDO
+
+                        ENDIF
+
+                     ELSE ! No precip in the model, search around
                         CALL spiral_profile_search(i, j, max_number_of_grid_points, &
                                                    smooth_observed_rainrate, model_rainrate, &
                                                    minimum_profile_scaling, maximum_profile_scaling, &
@@ -315,37 +360,24 @@ CONTAINS
 
                         IF (profile_found == NEARBY_PROFILE_FOUND) THEN
 
-                           latent_heat_factor = (smooth_observed_rainrate(i, j)/model_rainrate(i_profile, j_profile))
+                           latent_heat_factor = smooth_observed_rainrate(i, j)/model_rainrate(i_profile, j_profile)
 
                            DO k = kts, kte_unstag
-                              if (model_latent_heating(i_profile, k, j_profile) > 0.) THEN
+                              IF (model_latent_heating(i_profile, k, j_profile) > 0.) THEN
                                  latent_heat_tendency(i, k, j) = &
-                                    (model_latent_heating(i_profile, k, j_profile)*latent_heat_factor - &
-                                     model_latent_heating(i, k, j))
+                                    model_latent_heating(i_profile, k, j_profile)*latent_heat_factor
+                              ENDIF
+
+                              IF (model_latent_heating(i, k, j) > 0) THEN
+                                 latent_heat_tendency(i, k, j) = latent_heat_tendency(i, k, j) - &
+                                                                 model_latent_heating(i, k, j)
                               ENDIF
 
                            ENDDO
-
-                        ELSE
-
-                           !profile_found == NO_PROFILE_FOUND !TODO: Use climatological profile!
-
-                           ! No profile that match the criteria found, search unsuccessful
-                           IF (smooth_observed_rainrate(i, j) > model_rainrate(i, j)) THEN
-                              latent_heat_factor = maximum_profile_scaling - 1.
-                           ELSE
-                              latent_heat_factor = minimum_profile_scaling - 1.
-                           ENDIF
-
-                           DO k = kts, kte_unstag
-                               IF (model_latent_heating(i, k, j) > 0.) THEN
-                                  latent_heat_tendency(i, k, j) = model_latent_heating(i, k, j)*latent_heat_factor
-                               ENDIF
-                           ENDDO
-
                         ENDIF
 
                      ENDIF
+
                   ENDIF
 
                ENDIF
