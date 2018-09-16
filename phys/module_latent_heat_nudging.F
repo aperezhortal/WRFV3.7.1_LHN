@@ -8,6 +8,8 @@
 #define NO_PROFILE_FOUND 1
 #define NO_PROFILE_SEARCHED 2
 
+
+
 MODULE module_latent_heat_nudging
 
    USE module_model_constants, ONLY:SVP1_Pa, SVP2, SVP3, SVPT0, EP_2
@@ -46,12 +48,15 @@ CONTAINS
                                        observations_quality, &
                                        lhn_start, lhn_end, &
                                        latent_heat_tendency, qvapor_adjustment_tend, &
-                                       local_lhn_factor, &
+                                       lhn_precip_error, &
                                        minimum_profile_scaling, maximum_profile_scaling, &
                                        search_range, &
                                        lhn_smooth_filter_sigma, &
                                        filter_precipitation, &
                                        lhn_limit, &
+                                       cu_reinit_interval, &
+                                       lhn_action, &
+                                       nca, & ! Cumulus counter
                                        ids, ide, jds, jde, kds, kde, &
                                        ims, ime, jms, jme, kms, kme, &
                                        num_tiles, i_start, i_end, j_start, j_end, &
@@ -106,13 +111,19 @@ CONTAINS
       ! If sigma = 0 no filter is applied.
       REAL, INTENT(IN) :: lhn_smooth_filter_sigma
 
+      !> Interval in time steps where the restart the Cumulus parametrization in nudged columns.
+      INTEGER, INTENT(IN) :: cu_reinit_interval
+
+      REAL, DIMENSION(ims:ime, jms:jme), INTENT(INOUT) :: nca ! Cumulus counter
+
       !> Latent heat Nudging Tendency for the Potential temperature [K/s].
       REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(OUT) :: latent_heat_tendency
 
       !> Vapor mixing ratio tendency due to the Latent heat Nudging [Kg/Kg/s].
       REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(OUT) :: qvapor_adjustment_tend
 
-      REAL, DIMENSION(ims:ime, jms:jme), INTENT(OUT) :: local_lhn_factor
+      REAL, DIMENSION(ims:ime, jms:jme), INTENT(OUT) :: lhn_precip_error
+      INTEGER, DIMENSION(ims:ime, jms:jme), INTENT(OUT) :: lhn_action
 
       INTEGER, INTENT(IN) :: ids ! Start index for i in domain.
       INTEGER, INTENT(IN) :: ide ! End index for i in domain (staggered grid).
@@ -161,10 +172,15 @@ CONTAINS
       INTEGER :: j_profile
       REAL :: min_latent_heat_factor
       REAL :: max_latent_heat_factor
+      INTEGER :: lhn_steps
+      LOGICAL, DIMENSION(ims:ime, jms:jme) :: nudged_column
+      LOGICAL :: reinit_cu
 
       ! -------------------- End of Local variables Declarations ------------------------------------
 
       apply_latent_heat_nudging = (lhn_start <= current_time_in_seconds) .AND. (current_time_in_seconds <= lhn_end)
+
+      lhn_steps = NINT( (current_time_in_seconds*1.0 - lhn_start*1.0)/dt)
 
       min_latent_heat_factor = minimum_profile_scaling - 1.0
       max_latent_heat_factor = maximum_profile_scaling - 1.0
@@ -176,7 +192,11 @@ CONTAINS
       ! Initialize the LH and vapor adjustment tendency to zero
       latent_heat_tendency(:, :, :) = 0.
       qvapor_adjustment_tend(:, :, :) = 0.
-      local_lhn_factor(:, :) = 0
+      lhn_precip_error(:, :) = 0
+      nudged_column(:, :) = .false.
+      lhn_action(:, :) = 0.
+
+      reinit_cu = (MOD(lhn_steps, cu_reinit_interval) == 0) .AND. (cu_reinit_interval > 0)
 
       ! Just in case that a rounding or trucation error is present
       IF (search_range > grid_points_tolerance) THEN ! Search range bigger than 1, otherwise is considered as zero
@@ -243,6 +263,8 @@ CONTAINS
 
          ENDIF
 
+         lhn_precip_error(:, :) = model_rainrate(:, :) - smooth_observed_rainrate(:, :)
+
          write (*, *) "Check which model grid points meet the desired criteria"
 
 !!$OMP PARALLEL DO SCHEDULE(DYNAMIC) default(shared) &
@@ -277,7 +299,8 @@ CONTAINS
                      IF (noModelPrecipitation) THEN
                         CYCLE
                      ELSE
-                        local_lhn_factor(i, j) = min_latent_heat_factor
+                        nudged_column(i, j) = .true.
+                        lhn_action(i, j) = 1
                         DO k = kts, kte_unstag
                            IF (model_latent_heating(i, k, j) > 0.) THEN
                               latent_heat_tendency(i, k, j) = model_latent_heating(i, k, j)*min_latent_heat_factor
@@ -289,15 +312,15 @@ CONTAINS
                   ELSE ! Observed precipitation
 
                      ! Some observed precipitation treatment
-                     IF (.NOT. noModelPrecipitation) THEN
-                        local_lhn_factor(i, j) = (smooth_observed_rainrate(i, j)/model_rainrate(i, j)) - 1.0
-                     ENDIF
 
                      IF (.NOT. noModelPrecipitation) THEN ! There is precip in the model
 
                         latent_heat_factor = (smooth_observed_rainrate(i, j)/model_rainrate(i, j)) - 1.0
 
+                        nudged_column(i, j) = .true.
+
                         IF (latent_heat_factor > max_latent_heat_factor) THEN
+
                            ! Perform an spiral search in the nearby profiles
 
                            CALL spiral_profile_search(i, j, max_number_of_grid_points, &
@@ -308,24 +331,23 @@ CONTAINS
                                                       i_profile, j_profile, profile_found)
 
                            IF (profile_found == NEARBY_PROFILE_FOUND) THEN
+                              lhn_action(i, j) = 2
 
                               latent_heat_factor = smooth_observed_rainrate(i, j)/model_rainrate(i_profile, j_profile)
 
                               DO k = kts, kte_unstag
-                                 IF (model_latent_heating(i_profile, k, j_profile) > 0.) THEN
-                                    latent_heat_tendency(i, k, j) = &
-                                       model_latent_heating(i_profile, k, j_profile)*latent_heat_factor &
-                                       - model_latent_heating(i, k, j)
-                                 ENDIF
+                                 latent_heat_tendency(i, k, j) = &
+                                    model_latent_heating(i_profile, k, j_profile)*latent_heat_factor &
+                                    - model_latent_heating(i, k, j)
 
-!                                 IF (model_latent_heating(i, k, j) > 0) THEN
-!                                    latent_heat_tendency(i, k, j) = latent_heat_tendency(i, k, j) - &
-!                                                                    model_latent_heating(i, k, j)
-!                                 ENDIF
+                                 IF (latent_heat_tendency(i, k, j) < 0.) THEN
+                                    latent_heat_tendency(i, k, j) = 0.
+                                 ENDIF
 
                               ENDDO
 
                            ELSE ! profile not found
+                              lhn_action(i, j) = 3
 
                               latent_heat_factor = max_latent_heat_factor
 
@@ -340,6 +362,9 @@ CONTAINS
                         ELSE ! (latent_heat_factor <= max_latent_heat_factor)
                            IF (latent_heat_factor < min_latent_heat_factor) THEN
                               latent_heat_factor = min_latent_heat_factor
+                              lhn_action(i, j) = 4
+                           ELSE
+                              lhn_action(i, j) = 5
                            ENDIF
 
                            DO k = kts, kte_unstag
@@ -351,6 +376,7 @@ CONTAINS
                         ENDIF
 
                      ELSE ! No precip in the model, search around
+
                         CALL spiral_profile_search(i, j, max_number_of_grid_points, &
                                                    smooth_observed_rainrate, model_rainrate, &
                                                    minimum_profile_scaling, maximum_profile_scaling, &
@@ -359,18 +385,19 @@ CONTAINS
                                                    i_profile, j_profile, profile_found)
 
                         IF (profile_found == NEARBY_PROFILE_FOUND) THEN
+                           lhn_action(i, j) = 6
+
+                           nudged_column(i, j) = .true.
 
                            latent_heat_factor = smooth_observed_rainrate(i, j)/model_rainrate(i_profile, j_profile)
 
                            DO k = kts, kte_unstag
-                              IF (model_latent_heating(i_profile, k, j_profile) > 0.) THEN
-                                 latent_heat_tendency(i, k, j) = &
-                                    model_latent_heating(i_profile, k, j_profile)*latent_heat_factor
-                              ENDIF
+                              latent_heat_tendency(i, k, j) = &
+                                 model_latent_heating(i_profile, k, j_profile)*latent_heat_factor - &
+                                 model_latent_heating(i, k, j)
 
-                              IF (model_latent_heating(i, k, j) > 0) THEN
-                                 latent_heat_tendency(i, k, j) = latent_heat_tendency(i, k, j) - &
-                                                                 model_latent_heating(i, k, j)
+                              IF (latent_heat_tendency(i, k, j) < 0.) THEN
+                                 latent_heat_tendency(i, k, j) = 0.
                               ENDIF
 
                            ENDDO
@@ -432,6 +459,10 @@ CONTAINS
                      latent_heat_tendency(i, k, j) = -lhn_limit
                   ENDIF
                ENDDO
+
+               IF ((reinit_cu) .AND. (nudged_column(i, j))) THEN
+                  nca(i, j) = -100.
+               ENDIF
 
             ENDDO
             ENDDO

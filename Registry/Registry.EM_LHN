@@ -10,7 +10,8 @@ state     real  observations_quality  ij     misc        1         -     i6   "O
 state     real  latent_heat_tendency  ikj    misc        1         -     h    "latent_heat_tendency" "Latent Heat Tendency"              "K/s"
 state     real  qvapor_adjustment_tend  ikj  misc        1         -     h    "qvapor_adjustment_tend" "Humidity adjustment tendency"    "kg/kg/s"
 
-state     real  local_lhn_factor       ij    misc        1         -     h    "local_lhn_factor" "Local Latent heat nudgin factor"    ""
+state     integer  lhn_action       ij    misc        1         -     h    "lhn_action" "Latent heat nudging action"    ""
+state     real  lhn_precip_error       ij    misc        1         -     h    "lhn_precip_error" "Precipitation error [mm/hr]"    ""
 
 
 #---------------------------------------------------------------------------------------------------------------------------------------
@@ -26,6 +27,7 @@ rconfig   integer search_range    namelist,latent_heat_nudging            max_do
 rconfig   real   lhn_smooth_filter_sigma   namelist,latent_heat_nudging   max_domains    1.       rh       "lhn_smooth_filter_sigma" "LHN horizontal recursive filter standard deviation in grid points"    ""
 rconfig   logical  lhn_filter_precipitation namelist,latent_heat_nudging  max_domains    .false.  rh       "lhn_filter_precipitation" "Apply horizontal recursive filter also to preocipitation fields"    ""
 rconfig   real   lhn_limit         namelist,latent_heat_nudging           max_domains    0.0005   rh       "lhn_limit" "LHN absolute limit for pot. temperature [K/s]"    ""
+rconfig   integer cu_reinit_interval   namelist,latent_heat_nudging       max_domains    -1       rh       "cu_reinit_interval" "Cumulus parametrization reinitialization interval in time steps"    ""
 
 #---------------------------------------------------------------------------------------------------------------------------------------
 # Package Declarations
