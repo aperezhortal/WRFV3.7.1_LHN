@@ -24,6 +24,7 @@ state    real  NUDGING_MASK      ij      misc     1         -      r     "NUDGIN
 rconfig   integer  nudging_type           namelist,analysis_nudging         max_domains    0       rh       "Nudging Type"             ""      ""
 rconfig   integer  analysis_time          namelist,analysis_nudging         max_domains    0       rh       "Analysis time in seconds from the beginning"            ""      ""
 rconfig   real     relaxation_time        namelist,analysis_nudging         max_domains    600.    rh       "Nudging relaxation time [s]"      
+rconfig   real     nudging_gain           namelist,analysis_nudging         max_domains    1.      rh       "Nudging relaxation time [s]"
 rconfig   logical  nudge_u                namelist,analysis_nudging         max_domains    .false. rh       "Nudge U"
 rconfig   logical  nudge_v                namelist,analysis_nudging         max_domains    .false. rh       "Nudge V"
 rconfig   logical  nudge_w                namelist,analysis_nudging         max_domains    .false. rh       "Nudge W"

@@ -1412,6 +1412,7 @@ BENCH_END(fdda_driver_tim)
       CALL nudge_towards_analysis( itimestep=grid%itimestep,dt=grid%dt,xtime=grid%XTIME,      &
                                    analysis_time=config_flags%analysis_time, &
                                    relaxation_time=config_flags%relaxation_time,  &
+                                   nudging_gain=config_flags%nudging_gain, &
                                    nudge_u=config_flags%nudge_u,  &
                                    nudge_v=config_flags%nudge_v,  &
                                    nudge_w=config_flags%nudge_w,  &

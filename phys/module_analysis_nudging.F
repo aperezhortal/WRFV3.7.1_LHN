@@ -8,7 +8,7 @@ CONTAINS
 !-------------------------------------------------------------------
 !
    SUBROUTINE nudge_towards_analysis(itimestep, dt, xtime, &
-                                     analysis_time, relaxation_time, &
+                                     analysis_time, relaxation_time,nudging_gain, &
                                      nudge_u, nudge_v, nudge_w, nudge_q, nudge_t, nudge_ph, nudge_mu, &
                                      u_analysis, v_analysis, t_analysis, q_analysis, w_analysis, &
                                      ph_analysis, mu_analysis, &
@@ -70,6 +70,8 @@ CONTAINS
       REAL, INTENT(IN) :: dt
       REAL, INTENT(IN) :: xtime
       REAL, INTENT(IN) :: relaxation_time
+      REAL, INTENT(IN) :: nudging_gain
+
       LOGICAL, INTENT(IN) :: nudge_u
       LOGICAL, INTENT(IN) :: nudge_v
       LOGICAL, INTENT(IN) :: nudge_w
@@ -131,6 +133,7 @@ CONTAINS
       REAL :: nudgingstarttimeinseconds
       REAL :: nudgingendtimeinseconds
       REAL :: currenttimeinseconds
+      REAL :: nudging_factor
 
       CHARACTER(LEN=256):: message
 
@@ -155,6 +158,8 @@ CONTAINS
 
           WRITE (*,*) 'Apllying nudging. currentTimeInSeconds :', currenttimeinseconds
 
+          nudging_factor = nudging_gain / relaxation_time
+
 !$OMP PARALLEL DO &
 !$OMP PRIVATE ( ij,i,j,k )
          DO ij = 1, num_tiles
@@ -164,7 +169,7 @@ CONTAINS
                DO k = kts, kte
                DO i = i_start(ij), i_end(ij) + 1 ! U staggered in X -> Need to add 1 to i_end
                   if (nudging_mask(i, j) > 0.) then
-                     rundgdten(i, k, j) = (U_ANALYSIS(i, k, j) - u_staggered(i, k, j))/relaxation_time
+                     rundgdten(i, k, j) = (U_ANALYSIS(i, k, j) - u_staggered(i, k, j))*nudging_factor
                   else
                      rundgdten(i, k, j) = 0.
                   endif
@@ -179,7 +184,7 @@ CONTAINS
                DO i = i_start(ij), i_end(ij)
 
                   if (nudging_mask(i, j) > 0.) then
-                     rvndgdten(i, k, j) = (V_ANALYSIS(i, k, j) - v_staggered(i, k, j))/relaxation_time
+                     rvndgdten(i, k, j) = (V_ANALYSIS(i, k, j) - v_staggered(i, k, j))*nudging_factor
                   else
                      rvndgdten(i, k, j) = 0.
                   endif
@@ -194,7 +199,7 @@ CONTAINS
                DO k = kts, kte + 1 ! W staggered in Z -> Need to add 1 to kte
                DO i = i_start(ij), i_end(ij)
                   if (nudging_mask(i, j) > 0.) then
-                     rwndgdten(i, k, j) = (W_ANALYSIS(i, k, j) - W_staggered(i, k, j))/relaxation_time
+                     rwndgdten(i, k, j) = (W_ANALYSIS(i, k, j) - W_staggered(i, k, j))*nudging_factor
                   else
                      rwndgdten(i, k, j) = 0.
                   endif
@@ -208,7 +213,7 @@ CONTAINS
                DO k = kts, kte + 1 ! W staggered in Z -> Need to add 1 to kte
                DO i = i_start(ij), i_end(ij)
                   if (nudging_mask(i, j) > 0.) then
-                     rphndgdten(i, k, j) = (PH_ANALYSIS(i, k, j) - ph_staggered(i, k, j))/relaxation_time
+                     rphndgdten(i, k, j) = (PH_ANALYSIS(i, k, j) - ph_staggered(i, k, j))*nudging_factor
                   else
                      rphndgdten(i, k, j) = 0.
                   endif
@@ -223,7 +228,7 @@ CONTAINS
                DO k = kts, kte
                DO i = i_start(ij), i_end(ij)
                   if (nudging_mask(i, j) > 0.) then
-                     rthndgdten(i, k, j) = (T_ANALYSIS(i, k, j) + 300.-temperature(i, k, j))/relaxation_time
+                     rthndgdten(i, k, j) = (T_ANALYSIS(i, k, j) + 300.-temperature(i, k, j))*nudging_factor
                   else
                      rthndgdten(i, k, j) = 0.
                   endif
@@ -237,7 +242,7 @@ CONTAINS
                DO k = kts, kte
                DO i = i_start(ij), i_end(ij)
                   if (nudging_mask(i, j) > 0.) then
-                     rqvndgdten(i, k, j) = (q_ANALYSIS(i, k, j) - qvapor(i, k, j))/relaxation_time
+                     rqvndgdten(i, k, j) = (q_ANALYSIS(i, k, j) - qvapor(i, k, j))*nudging_factor
                   else
                      rqvndgdten(i, k, j) = 0.
                   endif
@@ -250,7 +255,7 @@ CONTAINS
                DO j = j_start(ij), j_end(ij)
                DO i = i_start(ij), i_end(ij)
                   if (nudging_mask(i, j) > 0.) then
-                     rmundgdten(i, j) = (MU_ANALYSIS(i, j) - mu(i, j))/relaxation_time
+                     rmundgdten(i, j) = (MU_ANALYSIS(i, j) - mu(i, j))*nudging_factor
                   else
                      rmundgdten(i, j) = 0.
                   endif
