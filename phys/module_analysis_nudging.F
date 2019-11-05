@@ -17,10 +17,10 @@ CONTAINS
                                      ph_staggered, mu, &
                                      rundgdten, rvndgdten, rwndgdten, rqvndgdten, rthndgdten, &
                                      rphndgdten, rmundgdten, &
+                                     nca,cu_reinit, cu_reinit_dt, cu_reinit_duration,cu_reinit_counter, &
                                      ids, ide, jds, jde, kds, kde, &
                                      ims, ime, jms, jme, kms, kme, &
                                      i_start, i_end, j_start, j_end, kts, kte, num_tiles)
-
 !-------------------------------------------------------------------
       IMPLICIT NONE
       !-------------------------------------------------------------------
@@ -112,6 +112,12 @@ CONTAINS
       REAL, INTENT(IN), DIMENSION(ims:ime, kms:kme, jms:jme) :: q_analysis
       REAL, INTENT(IN), DIMENSION(ims:ime, kms:kme, jms:jme) :: w_analysis
       REAL, INTENT(IN), DIMENSION(ims:ime, kms:kme, jms:jme) :: ph_analysis
+      REAL, INTENT(INOUT), DIMENSION( ims:ime , jms:jme )    :: nca
+
+      LOGICAL, INTENT(IN) :: cu_reinit
+      REAL, INTENT(IN) :: cu_reinit_dt
+      REAL, INTENT(IN) :: cu_reinit_duration
+      REAL, INTENT(INOUT) :: cu_reinit_counter
 
       REAL, INTENT(IN), DIMENSION(ims:ime, jms:jme) :: mu
       REAL, INTENT(INOUT), DIMENSION(ims:ime, jms:jme) :: mu_analysis
@@ -134,6 +140,7 @@ CONTAINS
       REAL :: nudgingendtimeinseconds
       REAL :: currenttimeinseconds
       REAL :: nudging_factor
+      REAL :: cu_reinit_end
 
       CHARACTER(LEN=256):: message
 
@@ -145,7 +152,6 @@ CONTAINS
       ! z(k) = 0.5*(z_at_w(k) + z_at_w(k+1))
       !END DO
 
-      ! Humidity nudging
 
       nudgingstarttimeinseconds = analysis_time - relaxation_time
 
@@ -276,6 +282,33 @@ CONTAINS
 
       ENDIF
 
+
+      IF (cu_reinit) THEN
+          IF (currenttimeinseconds .LT. analysis_time) THEN
+                cu_reinit_counter = 0.
+          ENDIF
+
+          ! Reinit Cumulus parametrization periodically
+          IF ( ABS(currenttimeinseconds - analysis_time) .lt. dt ) THEN
+              cu_reinit_counter = cu_reinit_dt
+              !Initialize at the analysis time (end of nudging period)
+          ENDIF
+
+          cu_reinit_end = analysis_time + cu_reinit_duration
+          IF ( (currenttimeinseconds .GE. analysis_time) .AND. &
+               (currenttimeinseconds .LE. cu_reinit_end) ) THEN
+
+                IF ( cu_reinit_counter .ge. cu_reinit_dt) THEN
+                    WRITE (6, *) 'Reinit CU counter'
+                    cu_reinit_counter = 0.
+                    nca(:,:)=-100.
+                ENDIF
+          ENDIF
+
+          cu_reinit_counter = cu_reinit_counter + dt
+      ENDIF
+
+
       IF (.TRUE.) THEN
          WRITE (6, '(A,F15.2)') ' currentTimeInSeconds :', currenttimeinseconds
          WRITE (6, '(A,F15.2)') ' nudgingStartTimeInSeconds :', nudgingstarttimeinseconds
@@ -285,6 +318,7 @@ CONTAINS
          WRITE (6, '(A,F15.2)') ' xtime :', xtime
          WRITE (6, '(A,F15.2)') ' nudgingRelaxation :', relaxation_time
          WRITE (6, '(A,F15.2)') ' dt :', dt
+         WRITE (6, '(A,F15.2)') ' cu_reinit_counter :', cu_reinit_counter
       ENDIF
 
    END SUBROUTINE nudge_towards_analysis

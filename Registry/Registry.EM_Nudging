@@ -14,6 +14,7 @@ state    real  PH_ANALYSIS       ikj     misc     1         Z      i0r   "PH_ANA
 state    real  MU_ANALYSIS       ij      misc     1         -      i0r   "MU_ANALYSIS"              "Analysis Mass per unit of area (MU)"  "Pa"
 state    real  RWNDGDTEN         ikj     misc     1         Z      r     "RWNDGDTEN"                "COUPLED W WIND TENDENCY DUE TO NUDGING"  "Pa m s-2"
 state    real  NUDGING_MASK      ij      misc     1         -      r     "NUDGING_MASK"             "Analysis Nudging mask" ""
+state    real  CU_REINIT_COUNTER  -      misc     1         -      r     "CU_REINIT_COUNTER"        "Cumulus reinit counter (seconds)"  ""
 
 
 
@@ -32,6 +33,10 @@ rconfig   logical  nudge_q                namelist,analysis_nudging         max_
 rconfig   logical  nudge_t                namelist,analysis_nudging         max_domains    .false. rh       "Nudge T"
 rconfig   logical  nudge_ph               namelist,analysis_nudging         max_domains    .false. rh       "Nudge PH"
 rconfig   logical  nudge_mu               namelist,analysis_nudging         max_domains    .false. rh       "Nudge MU"
+
+rconfig   logical  cu_reinit              namelist,analysis_nudging         max_domains    .false. rh       "Activate Cumulus reinitialization"
+rconfig   real  cu_reinit_dt           namelist,analysis_nudging         max_domains    3600    rh       "Cumulus reinitialization interval in seconds"
+rconfig   real  cu_reinit_duration     namelist,analysis_nudging         max_domains    3600    rh       "Cumulus reinitialization duration from analysis time"
 
 
 #---------------------------------------------------------------------------------------------------------------------------------------

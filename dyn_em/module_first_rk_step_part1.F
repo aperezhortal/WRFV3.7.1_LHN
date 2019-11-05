@@ -1435,6 +1435,11 @@ BENCH_END(fdda_driver_tim)
                                    RQVNDGDTEN=grid%RQVNDGDTEN, &
                                    RPHNDGDTEN=grid%RPHNDGDTEN, &
                                    RMUNDGDTEN=grid%RMUNDGDTEN, &
+                                   nca=grid%nca, &
+                                   cu_reinit=config_flags%cu_reinit, &
+                                   cu_reinit_dt=config_flags%cu_reinit_dt, &
+                                   cu_reinit_duration=config_flags%cu_reinit_duration, &
+                                   cu_reinit_counter=grid%cu_reinit_counter, &
                                    ids=ids,ide=ide, jds=jds,jde=jde, kds=kds,kde=kde,   &
                                    ims=ims,ime=ime, jms=jms,jme=jme, kms=kms,kme=kme,                           &
                                    I_START=grid%i_start,I_END=min(grid%i_end, ide-1),               &
