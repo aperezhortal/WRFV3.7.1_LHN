@@ -478,15 +478,16 @@ CONTAINS
                               num_tiles, i_start, i_end, j_start, j_end, &
                               kts, kte_unstag)
 
-         write (*, *)
-         write (*, *) "minimum_profile_scaling", minimum_profile_scaling
-         write (*, *) "maximum_profile_scaling", maximum_profile_scaling
+         write (*, *) "--------------------------------------------------------------"
+         write (*, *) reinit_cu
+         !write (*, *) "minimum_profile_scaling", minimum_profile_scaling
+         !write (*, *) "maximum_profile_scaling", maximum_profile_scaling
          write (*, *) "lhn_limit", lhn_limit
          write (*, *)
-         write (*, *) "debug_vars", MINVAL(debug_vars(ids:ide - 1, jds:jde - 1)), &
-            MAXVAL(debug_vars(ids:ide - 1, jds:jde - 1))
-         write (*, *) "quality", MINVAL(observations_quality(ids:ide - 1, jds:jde - 1)), &
-            MAXVAL(observations_quality(ids:ide - 1, jds:jde - 1))
+         !write (*, *) "debug_vars", MINVAL(debug_vars(ids:ide - 1, jds:jde - 1)), &
+         !   MAXVAL(debug_vars(ids:ide - 1, jds:jde - 1))
+         !write (*, *) "quality", MINVAL(observations_quality(ids:ide - 1, jds:jde - 1)), &
+         !   MAXVAL(observations_quality(ids:ide - 1, jds:jde - 1))
 
          write (*, *)
          write (*, *) "latent_heat_tendency:", MINVAL(latent_heat_tendency(ids:ide, kds:kde, jds:jde)), &
@@ -495,16 +496,16 @@ CONTAINS
             MAXVAL(cumulus_latent_heating(ids:ide, kds:kde, jds:jde))
          write (*, *) "microphysics_latent_heating CU:", MINVAL(microphysics_latent_heating(ids:ide, kds:kde, jds:jde)), &
             MAXVAL(microphysics_latent_heating(ids:ide, kds:kde, jds:jde))
-         write (*, *)
-         write (*, *)
-         write (*, *) "model_rainrate:", MINVAL(model_rainrate(ids:ide - 1, jds:jde - 1)), &
-            MAXVAL(model_rainrate(ids:ide - 1, jds:jde - 1))
-         write (*, *) "rainrate_observations:", MINVAL(smooth_observed_rainrate(ids:ide - 1, jds:jde - 1)), &
-            MAXVAL(smooth_observed_rainrate(ids:ide - 1, jds:jde - 1))
-         write (*, *)
-         write (*, *)
-         write (*, *) "Min qvapor_adjustment_tend:", MINVAL(qvapor_adjustment_tend(ids:ide, kds:kde, jds:jde))*1000
-         write (*, *) "Max qvapor_adjustment_tend:", MAXVAL(qvapor_adjustment_tend(ids:ide, kds:kde, jds:jde))*1000
+         !write (*, *)
+         !write (*, *)
+         !write (*, *) "model_rainrate:", MINVAL(model_rainrate(ids:ide - 1, jds:jde - 1)), &
+         !   MAXVAL(model_rainrate(ids:ide - 1, jds:jde - 1))
+         !write (*, *) "rainrate_observations:", MINVAL(smooth_observed_rainrate(ids:ide - 1, jds:jde - 1)), &
+         !   MAXVAL(smooth_observed_rainrate(ids:ide - 1, jds:jde - 1))
+         !write (*, *)
+         !write (*, *)
+         !write (*, *) "Min qvapor_adjustment_tend:", MINVAL(qvapor_adjustment_tend(ids:ide, kds:kde, jds:jde))*1000
+         !write (*, *) "Max qvapor_adjustment_tend:", MAXVAL(qvapor_adjustment_tend(ids:ide, kds:kde, jds:jde))*1000
 
       ENDIF
 
